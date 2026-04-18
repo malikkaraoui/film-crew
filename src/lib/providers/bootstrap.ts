@@ -6,6 +6,7 @@ import { seedanceProvider } from './video/seedance'
 import { ltxProvider } from './video/ltx'
 import { fishAudioProvider } from './tts/fish-audio'
 import { stabilityProvider } from './image/stability'
+import { falImageProvider } from './image/fal'
 import { pexelsProvider } from './stock/pexels'
 import { pixabayProvider } from './stock/pixabay'
 
@@ -27,7 +28,8 @@ export function bootstrapProviders(): void {
   // TTS
   registry.register(fishAudioProvider)
 
-  // Image (storyboard)
+  // Image (storyboard) — FAL FLUX en priorité, Stability en fallback
+  registry.register(falImageProvider)
   registry.register(stabilityProvider)
 
   // Stock
