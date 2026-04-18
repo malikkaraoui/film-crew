@@ -63,18 +63,25 @@ Retourne UNIQUEMENT le JSON, sans markdown ni explication.`,
       ctx.runId,
     )
 
-    // Parser et sauvegarder le JSON
+    // Toujours sauvegarder la réponse brute pour diagnostic
+    await writeFile(join(ctx.storagePath, 'structure-raw.txt'), result.content)
+
+    // Parser le JSON — nettoyage défensif pour qwen3.5:4b
     let parsed: unknown
     try {
-      // Extraire le JSON de la réponse (au cas où il y a du texte autour)
-      const jsonMatch = result.content.match(/\{[\s\S]*\}/)
-      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(result.content)
-    } catch {
+      let raw = result.content
+      // Retirer les fences markdown ```json ... ```
+      raw = raw.replace(/^```(?:json)?\s*/m, '').replace(/\s*```\s*$/m, '')
+      // Extraire le premier objet JSON
+      const jsonMatch = raw.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) throw new Error('Aucun objet JSON trouvé dans la réponse')
+      parsed = JSON.parse(jsonMatch[0])
+    } catch (e) {
       return {
         success: false,
         costEur: result.costEur,
         outputData: { raw: result.content },
-        error: 'Impossible de parser le JSON structuré',
+        error: `Parsing JSON échoué: ${(e as Error).message}. Réponse brute conservée dans structure-raw.txt`,
       }
     }
 

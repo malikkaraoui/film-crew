@@ -89,7 +89,11 @@ export class BaseAgent {
     meetingTranscript: string,
     runId: string,
   ): Promise<AgentMessage> {
-    const prompt = `Voici le transcript de la réunion de production :\n\n${meetingTranscript}\n\nÉcris ta section du brief. Tu es responsable de : ${this.profile.briefSection}.\n\nRédige un texte structuré et concis, directement utilisable pour la suite du pipeline.`
+    // Réinitialiser l'historique pour rester dans la fenêtre de contexte.
+    // Le transcript complet est passé directement dans le prompt.
+    this.resetConversation()
+
+    const prompt = `Voici le transcript de la réunion de production :\n\n${meetingTranscript}\n\nÉcris ta section du brief. Tu es responsable de : ${this.profile.briefSection}.\n\nRédige un texte structuré et concis (10-20 lignes), directement utilisable pour la suite du pipeline.`
 
     const message = await this.speak(prompt, runId)
     message.messageType = 'brief_section'

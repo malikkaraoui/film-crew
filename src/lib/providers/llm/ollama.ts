@@ -21,7 +21,7 @@ export const ollamaProvider: LLMProvider = {
   },
 
   async chat(messages: LLMMessage[], opts: LLMOpts = {}): Promise<LLMResult> {
-    const model = opts.model || 'qwen3.5:4b'
+    const model = opts.model || process.env.OLLAMA_MODEL || 'mistral:latest'
     const start = Date.now()
 
     const res = await fetch(`${OLLAMA_URL}/api/chat`, {
