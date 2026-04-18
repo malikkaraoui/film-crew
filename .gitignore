@@ -42,6 +42,7 @@ __pycache__/
 /storage/brands/
 /storage/runs/
 /storage/stock/
+/storage/viral/
 
 # drizzle
 /drizzle/
