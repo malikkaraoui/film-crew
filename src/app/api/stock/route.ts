@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { registry } from '@/lib/providers/registry'
+import { bootstrapProviders } from '@/lib/providers/bootstrap'
+bootstrapProviders()
 import type { StockProvider, StockOpts } from '@/lib/providers/types'
 
 export async function GET(request: Request) {

@@ -1,8 +1,7 @@
-import { bootstrapProviders } from '@/lib/providers/bootstrap'
-
 export async function register() {
-  // Initialise le registre des providers au démarrage du serveur Next.js
+  // Bootstrap uniquement en Node.js — pas dans l'Edge Runtime
   if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { bootstrapProviders } = await import('@/lib/providers/bootstrap')
     bootstrapProviders()
   }
 }

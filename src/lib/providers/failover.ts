@@ -1,7 +1,11 @@
 import { registry } from './registry'
+import { bootstrapProviders } from './bootstrap'
 import { createProviderLog } from '@/lib/db/queries/logs'
 import { logger } from '@/lib/logger'
 import type { BaseProvider } from './types'
+
+// Garantit que les providers sont enregistrés avant toute utilisation
+bootstrapProviders()
 
 export type FailoverEvent = {
   original: string

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { registry } from '@/lib/providers/registry'
+import { bootstrapProviders } from '@/lib/providers/bootstrap'
+bootstrapProviders()
 
 export async function POST(_req: Request, { params }: { params: Promise<{ name: string }> }) {
   try {
