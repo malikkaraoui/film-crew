@@ -62,12 +62,30 @@ export default function RunPage() {
         <RunStepper steps={run.steps} currentStep={currentStep} onStepClick={handleStepBack} />
       </div>
 
-      <div className="mt-6 rounded-md border border-amber-200 bg-amber-50 p-4">
-        <h2 className="text-sm font-medium text-amber-800">Pipeline non démarré</h2>
-        <p className="mt-1 text-sm text-amber-700">
-          Le run est créé mais le pipeline n'est pas encore branché. Les étapes s'exécuteront ici une fois le Lot 2 livré.
-        </p>
-      </div>
+      {run.status === 'pending' && (
+        <div className="mt-6 rounded-md border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm text-amber-700">
+            Run en attente de démarrage...
+          </p>
+        </div>
+      )}
+      {run.status === 'failed' && (
+        <div className="mt-6 rounded-md border border-destructive bg-destructive/10 p-4">
+          <p className="text-sm text-destructive">
+            Le pipeline a échoué à l'étape {currentStep}.
+            {run.steps.find(s => s.stepNumber === currentStep)?.error && (
+              <span className="block mt-1 font-mono text-xs">{run.steps.find(s => s.stepNumber === currentStep)?.error}</span>
+            )}
+          </p>
+        </div>
+      )}
+      {run.status === 'completed' && (
+        <div className="mt-6 rounded-md border border-green-200 bg-green-50 p-4">
+          <p className="text-sm text-green-700">
+            Pipeline terminé — {run.steps.filter(s => s.status === 'completed').length}/8 étapes complétées.
+          </p>
+        </div>
+      )}
 
       <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
         <span>Coût : {(run.costEur ?? 0).toFixed(2)} €</span>

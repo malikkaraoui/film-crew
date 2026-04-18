@@ -51,7 +51,7 @@ export async function createRun(data: {
       runId: data.id,
       stepNumber: i + 1,
       stepName: STEP_NAMES[i],
-      status: i === 0 ? 'running' : 'pending',
+      status: 'pending',
     })
   }
 

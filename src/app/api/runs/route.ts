@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getRuns, createRun, getActiveRun } from '@/lib/db/queries/runs'
+import { executePipeline } from '@/lib/pipeline/engine'
+import { logger } from '@/lib/logger'
 import { mkdir } from 'fs/promises'
 import { join } from 'path'
 
@@ -46,6 +48,11 @@ export async function POST(request: Request) {
     await mkdir(join(runPath, 'subtitles'), { recursive: true })
     await mkdir(join(runPath, 'storyboard'), { recursive: true })
     await mkdir(join(runPath, 'final'), { recursive: true })
+
+    // Fire-and-forget : le pipeline tourne en arrière-plan dans le process Node.js
+    executePipeline(id).catch((e) => {
+      logger.error({ event: 'pipeline_crash', runId: id, error: (e as Error).message })
+    })
 
     return NextResponse.json({ data: newRun }, { status: 201 })
   } catch (e) {
