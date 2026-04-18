@@ -19,7 +19,7 @@ export interface VideoProvider extends BaseProvider {
 
 export interface TTSProvider extends BaseProvider {
   type: 'tts'
-  synthesize(text: string, voiceId: string, lang: string): Promise<AudioResult>
+  synthesize(text: string, voiceId: string, lang: string, outputDir?: string): Promise<AudioResult>
 }
 
 export interface LLMProvider extends BaseProvider {
@@ -46,6 +46,7 @@ export type VideoOpts = {
   aspectRatio?: string
   seed?: number
   audioRef?: string
+  outputDir?: string
 }
 
 export type VideoResult = {
@@ -84,6 +85,7 @@ export type ImageOpts = {
   width?: number
   height?: number
   style?: string
+  outputDir?: string
 }
 
 export type ImageResult = {

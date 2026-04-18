@@ -47,11 +47,12 @@ export const step4Storyboard: PipelineStep = {
       const prompt = `${scene.description}. ${scene.lighting}. ${scene.camera}. Style: cinématique, vidéo courte.`
 
       try {
+        const storyboardDir = join(ctx.storagePath, 'storyboard')
         const { result } = await executeWithFailover(
           'image',
           async (p) => {
             const img = p as ImageProvider
-            return img.generate(prompt, { width: 768, height: 1344, style: 'cinematic' })
+            return img.generate(prompt, { width: 768, height: 1344, style: 'cinematic', outputDir: storyboardDir })
           },
           ctx.runId,
         )

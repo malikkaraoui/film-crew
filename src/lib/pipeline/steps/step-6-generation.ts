@@ -33,6 +33,7 @@ export const step6Generation: PipelineStep = {
     // Générer les clips vidéo
     for (const entry of promptData.prompts) {
       try {
+        const clipsDir = join(ctx.storagePath, 'clips')
         const { result } = await executeWithFailover(
           'video',
           async (p) => {
@@ -41,6 +42,7 @@ export const step6Generation: PipelineStep = {
               resolution: '720p',
               duration: 10,
               aspectRatio: '9:16',
+              outputDir: clipsDir,
             })
           },
           ctx.runId,
@@ -110,7 +112,7 @@ export const step6Generation: PipelineStep = {
           'tts',
           async (p) => {
             const tts = p as TTSProvider
-            return tts.synthesize(narration, 'default', 'fr')
+            return tts.synthesize(narration, 'default', 'fr', ctx.storagePath)
           },
           ctx.runId,
         )
