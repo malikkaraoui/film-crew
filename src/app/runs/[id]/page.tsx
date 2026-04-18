@@ -75,6 +75,12 @@ export default function RunPage() {
         <Link href={`/runs/${id}/preview`} className="text-primary hover:underline">
           Preview
         </Link>
+        <Link href={`/runs/${id}/localize`} className="text-primary hover:underline">
+          Localiser
+        </Link>
+        <Link href={`/runs/${id}/export`} className="text-primary hover:underline">
+          Exporter
+        </Link>
       </div>
     </div>
   )
