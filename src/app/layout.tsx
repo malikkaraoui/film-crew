@@ -11,7 +11,7 @@ const geist = Geist({
 })
 
 export const metadata: Metadata = {
-  title: 'VIDEO_TIKTOK',
+  title: 'FILM-CREW',
   description: 'Pipeline de production vidéo courte IA',
 }
 

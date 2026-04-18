@@ -73,7 +73,7 @@ export function Topbar() {
   return (
     <header className="sticky top-0 z-50 flex h-12 items-center justify-between border-b bg-background px-4">
       <div className="flex items-center gap-4">
-        <span className="text-sm font-semibold">VIDEO_TIKTOK</span>
+        <span className="text-sm font-semibold">FILM-CREW</span>
 
         {activeRun && (
           <div className="flex items-center gap-2 text-xs">
