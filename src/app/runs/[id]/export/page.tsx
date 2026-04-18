@@ -151,10 +151,15 @@ export default function ExportPage() {
         </CardHeader>
       </Card>
 
-      {/* Bouton export */}
-      <Button disabled={!selectedPreset}>
-        Exporter {selectedPreset ? `(${presets.find((p) => p.platform === selectedPreset)?.name})` : ''}
-      </Button>
+      {/* Bouton export — non implémenté (Lot 6) */}
+      <div className="space-y-1">
+        <Button disabled>
+          Export non disponible — pipeline requis
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          L'export sera disponible une fois le pipeline de génération branché.
+        </p>
+      </div>
     </div>
   )
 }

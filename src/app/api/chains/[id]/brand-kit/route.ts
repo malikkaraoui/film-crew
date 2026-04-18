@@ -56,7 +56,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       }
       await mkdir(brandPath, { recursive: true })
       await writeFile(join(brandPath, 'brand.json'), data)
-      await updateChain(id, { brandKitPath: brandPath })
+      await updateChain(id, { brandKitPath: join('storage', 'brands', id) })
       return NextResponse.json({ data: { saved: true } })
     }
 

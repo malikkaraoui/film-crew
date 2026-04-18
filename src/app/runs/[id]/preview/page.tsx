@@ -34,10 +34,8 @@ export default function PreviewPage() {
     setLoading(false)
   }
 
-  async function handleRegenerate(clipId: string) {
-    // TODO: appeler l'API de régénération quand elle sera implémentée
-    alert(`Régénération du clip ${clipId} — à implémenter`)
-  }
+  // Régénération non implémentée (Lot 5)
+  function handleRegenerate(_clipId: string) { /* non implémenté */ }
 
   if (loading) return <p className="text-sm text-muted-foreground">Chargement...</p>
 
@@ -45,11 +43,10 @@ export default function PreviewPage() {
     <div className="space-y-6">
       <h1 className="text-xl font-semibold">Preview</h1>
 
-      {/* Lecteur vidéo — placeholder pour l'instant */}
       <div className="aspect-[9/16] max-w-sm mx-auto rounded-lg bg-muted flex items-center justify-center">
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm text-muted-foreground text-center px-4">
           {clips.length > 0
-            ? 'Vidéo assemblée — lecteur à intégrer'
+            ? `${clips.length} clip(s) généré(s) — assemblage non implémenté`
             : 'Aucun clip généré'}
         </p>
       </div>

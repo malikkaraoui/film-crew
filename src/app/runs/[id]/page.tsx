@@ -48,7 +48,7 @@ export default function RunPage() {
             variant="destructive"
             size="sm"
             onClick={async () => {
-              if (!confirm('Arrêter ce run ? Les clips déjà générés seront conservés.')) return
+              if (!confirm('Arrêter ce run ?')) return
               await fetch(`/api/runs/${id}/kill`, { method: 'POST' })
               loadRun()
             }}
@@ -62,12 +62,10 @@ export default function RunPage() {
         <RunStepper steps={run.steps} currentStep={currentStep} onStepClick={handleStepBack} />
       </div>
 
-      <div className="mt-6 rounded-md border p-4">
-        <h2 className="text-lg font-semibold">
-          Étape {currentStep} — {run.steps.find((s) => s.stepNumber === currentStep)?.stepName}
-        </h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Contenu de l'étape — à implémenter dans les Epics suivants
+      <div className="mt-6 rounded-md border border-amber-200 bg-amber-50 p-4">
+        <h2 className="text-sm font-medium text-amber-800">Pipeline non démarré</h2>
+        <p className="mt-1 text-sm text-amber-700">
+          Le run est créé mais le pipeline n'est pas encore branché. Les étapes s'exécuteront ici une fois le Lot 2 livré.
         </p>
       </div>
 

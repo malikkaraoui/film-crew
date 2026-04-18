@@ -90,7 +90,7 @@ function ClipDetail({ clip, onRegenerate }: { clip: Clip; onRegenerate: (id: str
       <p className="text-xs text-muted-foreground">{clip.prompt}</p>
 
       <div className="flex gap-2">
-        <Button size="sm" variant="outline" className="text-xs" onClick={() => onRegenerate(clip.id)}>
+        <Button size="sm" variant="outline" className="text-xs" disabled title="Régénération non implémentée (Lot 5)">
           Régénérer
         </Button>
       </div>

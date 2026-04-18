@@ -41,7 +41,7 @@ export async function createRun(data: {
   const [row] = await db.insert(run).values({
     ...data,
     type: data.type || 'standard',
-    status: 'running',
+    status: 'pending',
   }).returning()
 
   // Créer les 8 étapes

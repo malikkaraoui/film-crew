@@ -59,7 +59,7 @@ export function StoryboardGrid({ images, onValidate, onReject, onValidateAll, on
             Valider tout
           </Button>
           {rejectedCount > 0 && (
-            <Button size="sm">
+            <Button size="sm" disabled title="Régénération non implémentée (Lot 5)">
               Régénérer la sélection ({rejectedCount})
             </Button>
           )}
