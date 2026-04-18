@@ -1,17 +1,27 @@
-import { writeFile } from 'fs/promises'
+import { readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
-import { registry } from '@/lib/providers/registry'
 import { executeWithFailover } from '@/lib/providers/failover'
 import type { LLMProvider } from '@/lib/providers/types'
 import type { PipelineStep, StepContext, StepResult } from '../types'
+import { logger } from '@/lib/logger'
 
 export const step3Json: PipelineStep = {
   name: 'JSON structuré',
   stepNumber: 3,
 
   async execute(ctx: StepContext): Promise<StepResult> {
-    // Lire le brief de l'étape précédente depuis le run
-    // On demande au LLM de transformer le brief en structure JSON
+    // Lire le brief produit par la réunion d'agents (step 2)
+    let briefContent: string | null = null
+    try {
+      briefContent = await readFile(join(ctx.storagePath, 'brief.json'), 'utf-8')
+    } catch {
+      logger.warn({ event: 'brief_missing', runId: ctx.runId, fallback: 'ctx.idea' })
+    }
+
+    // Construire le prompt utilisateur à partir du brief ou fallback sur l'idée brute
+    const userContent = briefContent
+      ? `Brief de la réunion de production :\n\n${briefContent}\n\nTransforme ce brief en JSON structuré pour la production.`
+      : `[FALLBACK — brief absent, idée brute uniquement]\n\nIdée : ${ctx.idea}\n\nTransforme en JSON structuré pour la production.`
 
     const { result } = await executeWithFailover(
       'llm',
@@ -44,7 +54,7 @@ Retourne UNIQUEMENT le JSON, sans markdown ni explication.`,
             },
             {
               role: 'user',
-              content: `Idée : ${ctx.idea}\n\nTransforme en JSON structuré pour la production.`,
+              content: userContent,
             },
           ],
           { temperature: 0.5, maxTokens: 2048 },

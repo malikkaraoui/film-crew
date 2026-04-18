@@ -1,5 +1,5 @@
 import { join } from 'path'
-import { readFile } from 'fs/promises'
+import { readFile, writeFile } from 'fs/promises'
 import { MeetingCoordinator } from '@/lib/agents/coordinator'
 import type { PipelineStep, StepContext, StepResult } from '../types'
 
@@ -27,6 +27,12 @@ export const step2Brainstorm: PipelineStep = {
     const totalCost = coordinator.getMessages().reduce(
       (sum, m) => sum + (m.metadata?.costEur ?? 0),
       0,
+    )
+
+    // Persister le brief pour que step-3-json puisse le lire
+    await writeFile(
+      join(ctx.storagePath, 'brief.json'),
+      JSON.stringify(brief, null, 2),
     )
 
     return {
