@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { readFile, writeFile } from 'fs/promises'
+import { readFile, writeFile, readdir, stat, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { executeWithFailover } from '@/lib/providers/failover'
 import type { LLMProvider } from '@/lib/providers/types'
@@ -92,6 +92,42 @@ Retourne UNIQUEMENT le JSON.`,
       )
 
       return NextResponse.json({ data: metadata })
+    }
+
+    if (action === 'download_artifacts') {
+      const storagePath = join(process.cwd(), 'storage', 'runs', id)
+
+      // Collecter les artefacts réels
+      const artifacts: { name: string; content: string }[] = []
+      const textFiles = ['brief.json', 'structure.json', 'structure-raw.txt', 'prompts.json', 'generation-manifest.json', 'preview-manifest.json']
+      for (const name of textFiles) {
+        try {
+          artifacts.push({ name, content: await readFile(join(storagePath, name), 'utf-8') })
+        } catch { /* absent */ }
+      }
+      // Métadonnées
+      try {
+        artifacts.push({ name: 'final/metadata.json', content: await readFile(join(storagePath, 'final', 'metadata.json'), 'utf-8') })
+      } catch { /* absent */ }
+      // Storyboard manifest
+      try {
+        artifacts.push({ name: 'storyboard/manifest.json', content: await readFile(join(storagePath, 'storyboard', 'manifest.json'), 'utf-8') })
+      } catch { /* absent */ }
+
+      // Lister les images storyboard
+      let imageFiles: string[] = []
+      try {
+        const files = await readdir(join(storagePath, 'storyboard'))
+        imageFiles = files.filter(f => f.endsWith('.png') || f.endsWith('.jpg'))
+      } catch { /* absent */ }
+
+      return NextResponse.json({
+        data: {
+          artifacts: artifacts.map(a => ({ name: a.name, sizeBytes: Buffer.byteLength(a.content) })),
+          storyboardImages: imageFiles,
+          summary: `${artifacts.length} fichiers texte/JSON + ${imageFiles.length} images storyboard`,
+        },
+      })
     }
 
     return NextResponse.json(
