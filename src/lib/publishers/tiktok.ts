@@ -9,31 +9,37 @@ import { logger } from '@/lib/logger'
  *
  * Credentials requis :
  * - TIKTOK_ACCESS_TOKEN : user access token OAuth avec scopes video.upload + video.publish
- * - TIKTOK_CLIENT_KEY   : optionnel, utilisé pour le healthcheck et la doc
+ * - TIKTOK_CLIENT_KEY   : requis pour le flow OAuth
+ * - TIKTOK_CLIENT_SECRET: requis pour l'échange code -> token
  *
  * Obtenir un access token :
  * 1. Créer une app sur https://developers.tiktok.com
- * 2. Activer les scopes video.upload et video.publish
- * 3. Implémenter le flow OAuth 2.0 pour obtenir un access token
- *    ou utiliser le mode Sandbox de l'app TikTok Developer
- * 4. Définir TIKTOK_ACCESS_TOKEN dans .env.local
+ * 2. Activer les scopes user.info.basic, video.upload et video.publish
+ * 3. Déployer l'app en HTTPS (ex: Vercel) et lancer /tiktok/connect
+ * 4. Autoriser le compte TikTok puis échanger le code en access token
+ * 5. Définir TIKTOK_ACCESS_TOKEN dans .env.local
  */
 
 const ACCESS_TOKEN = process.env.TIKTOK_ACCESS_TOKEN || ''
 const CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY || ''
+const CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET || ''
 const BASE_URL = 'https://open.tiktokapis.com/v2'
+const DEFAULT_OAUTH_SCOPES = ['user.info.basic', 'video.upload', 'video.publish']
 
 const TIKTOK_CREDENTIALS_INSTRUCTIONS = [
   'Pour publier sur TikTok, configurer dans .env.local :',
   '',
   '  TIKTOK_ACCESS_TOKEN=<user_access_token>',
-  '  TIKTOK_CLIENT_KEY=<client_key>  (optionnel)',
+  '  TIKTOK_CLIENT_KEY=<client_key>',
+  '  TIKTOK_CLIENT_SECRET=<client_secret>',
+  '  TIKTOK_REFRESH_TOKEN=<refresh_token>  (optionnel mais recommandé)',
   '',
   'Obtenir ces credentials :',
   '  1. Créer une app sur https://developers.tiktok.com',
-  '  2. Activer les scopes : video.upload, video.publish',
-  '  3. Obtenir un access token via le flow OAuth 2.0',
-  '     ou via le mode Sandbox de votre app TikTok Developer',
+  '  2. Activer les scopes : user.info.basic, video.upload, video.publish',
+  '  3. Déployer l’app en HTTPS (ex: Vercel) puis ouvrir /tiktok/connect',
+  '  4. Autoriser le compte TikTok et récupérer access_token + refresh_token',
+  '  5. Coller les tokens dans .env.local puis redémarrer l’app',
   '',
   'Sandbox officielle TikTok :',
   '  https://developers.tiktok.com/doc/content-posting-api-get-started/',
@@ -41,6 +47,107 @@ const TIKTOK_CREDENTIALS_INSTRUCTIONS = [
   'En mode Sandbox, les vidéos sont postées en mode privé sur',
   'un compte de test — aucune publication publique.',
 ].join('\n')
+
+export type TikTokOAuthTokenResult = {
+  accessToken: string
+  refreshToken: string
+  openId: string
+  scope: string
+  expiresIn: number
+  refreshExpiresIn: number
+  tokenType: string
+}
+
+export function getTikTokCallbackUrl(origin: string): string {
+  const normalized = origin.endsWith('/') ? origin.slice(0, -1) : origin
+  return `${normalized}/tiktok/callback`
+}
+
+export function buildTikTokAuthorizeUrl(opts: {
+  clientKey: string
+  redirectUri: string
+  state: string
+  scopes?: string[]
+}): string {
+  const url = new URL('https://www.tiktok.com/v2/auth/authorize/')
+  url.searchParams.set('client_key', opts.clientKey)
+  url.searchParams.set('response_type', 'code')
+  url.searchParams.set('scope', (opts.scopes ?? DEFAULT_OAUTH_SCOPES).join(','))
+  url.searchParams.set('redirect_uri', opts.redirectUri)
+  url.searchParams.set('state', opts.state)
+  url.searchParams.set('disable_auto_auth', '1')
+  return url.toString()
+}
+
+export async function exchangeTikTokAuthorizationCode(opts: {
+  code: string
+  redirectUri: string
+}): Promise<TikTokOAuthTokenResult> {
+  if (!CLIENT_KEY || !CLIENT_SECRET) {
+    throw new Error('TIKTOK_CLIENT_KEY ou TIKTOK_CLIENT_SECRET manquant côté serveur')
+  }
+
+  const payload = new URLSearchParams({
+    client_key: CLIENT_KEY,
+    client_secret: CLIENT_SECRET,
+    code: opts.code,
+    grant_type: 'authorization_code',
+    redirect_uri: opts.redirectUri,
+  })
+
+  const res = await fetch(`${BASE_URL}/oauth/token/`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Cache-Control': 'no-cache',
+    },
+    body: payload.toString(),
+  })
+
+  const data = await res.json().catch(() => null) as {
+    access_token?: string
+    expires_in?: number
+    open_id?: string
+    refresh_expires_in?: number
+    refresh_token?: string
+    scope?: string
+    token_type?: string
+    error?: string
+    error_description?: string
+    log_id?: string
+  } | null
+
+  if (!res.ok || data?.error) {
+    const suffix = data?.log_id ? ` (log_id=${data.log_id})` : ''
+    throw new Error(
+      data?.error_description
+        ? `TikTok OAuth: ${data.error_description}${suffix}`
+        : `TikTok OAuth HTTP ${res.status}${suffix}`,
+    )
+  }
+
+  if (!data?.access_token || !data.refresh_token || !data.open_id) {
+    throw new Error('TikTok OAuth: réponse incomplète (access_token / refresh_token / open_id manquant)')
+  }
+
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    openId: data.open_id,
+    scope: data.scope ?? '',
+    expiresIn: data.expires_in ?? 0,
+    refreshExpiresIn: data.refresh_expires_in ?? 0,
+    tokenType: data.token_type ?? 'Bearer',
+  }
+}
+
+export function buildTikTokEnvSnippet(tokens: TikTokOAuthTokenResult): string {
+  return [
+    `TIKTOK_ACCESS_TOKEN=${tokens.accessToken}`,
+    `TIKTOK_REFRESH_TOKEN=${tokens.refreshToken}`,
+    `TIKTOK_OPEN_ID=${tokens.openId}`,
+  ].join('\n')
+}
 
 export type PublishStatus =
   | 'SUCCESS'

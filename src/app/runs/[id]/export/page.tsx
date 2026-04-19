@@ -242,6 +242,18 @@ export default function ExportPage() {
                       {publishResult.instructions}
                     </pre>
                   )}
+                  <p className="pt-1 text-[10px] text-amber-700">
+                    Si l’app est déployée en HTTPS, lance l’assistant OAuth via{' '}
+                    <a
+                      href="/tiktok/connect"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline underline-offset-2"
+                    >
+                      /tiktok/connect
+                    </a>
+                    .
+                  </p>
                 </div>
               )}
 
@@ -268,7 +280,7 @@ export default function ExportPage() {
               {publishResult?.tiktokHealth?.status === 'ready'
                 ? 'Credentials TikTok valides. Cliquez sur Publier pour lancer la publication.'
                 : publishResult?.tiktokHealth?.status === 'no_credentials'
-                ? 'TIKTOK_ACCESS_TOKEN absent — définir dans .env.local pour activer la publication.'
+                ? 'TIKTOK_ACCESS_TOKEN absent — définir dans .env.local, ou ouvrir /tiktok/connect sur l’instance HTTPS déployée.'
                 : 'Cliquez sur Publier pour tenter la publication TikTok.'}
             </CardDescription>
           )}

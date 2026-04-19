@@ -2,6 +2,7 @@ import { describe, it, expect, afterAll } from 'vitest'
 import { rmSync, mkdirSync, existsSync } from 'fs'
 import { readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
+import { buildTikTokAuthorizeUrl, buildTikTokEnvSnippet, getTikTokCallbackUrl } from '../tiktok'
 
 const FIXTURE_DIR = join(__dirname, '__fixtures__', 'tiktok-test')
 
@@ -209,21 +210,24 @@ describe('10A — Publication TikTok', () => {
         'Pour publier sur TikTok, configurer dans .env.local :',
         '',
         '  TIKTOK_ACCESS_TOKEN=<user_access_token>',
-        '  TIKTOK_CLIENT_KEY=<client_key>  (optionnel)',
+        '  TIKTOK_CLIENT_KEY=<client_key>',
+        '  TIKTOK_CLIENT_SECRET=<client_secret>',
         '',
         'Obtenir ces credentials :',
         '  1. Créer une app sur https://developers.tiktok.com',
-        '  2. Activer les scopes : video.upload, video.publish',
-        '  3. Obtenir un access token via le flow OAuth 2.0',
-        '     ou via le mode Sandbox de votre app TikTok Developer',
+        '  2. Activer les scopes : user.info.basic, video.upload, video.publish',
+        '  3. Déployer l’app en HTTPS (ex: Vercel) puis ouvrir /tiktok/connect pour lancer le flow OAuth 2.0',
+        '  4. Autoriser le compte TikTok et récupérer access_token + refresh_token',
       ].join('\n')
 
       expect(instructions).toContain('TIKTOK_ACCESS_TOKEN')
+      expect(instructions).toContain('TIKTOK_CLIENT_SECRET')
       expect(instructions).toContain('developers.tiktok.com')
       expect(instructions).toContain('video.upload')
       expect(instructions).toContain('video.publish')
+      expect(instructions).toContain('user.info.basic')
       expect(instructions).toContain('OAuth')
-      expect(instructions).toContain('Sandbox')
+      expect(instructions).toContain('/tiktok/connect')
     })
 
     it('mentionne le mode Sandbox officiel TikTok', () => {
@@ -231,6 +235,50 @@ describe('10A — Publication TikTok', () => {
 
       expect(instructions).toContain('Sandbox')
       expect(instructions).toContain('developers.tiktok.com')
+    })
+  })
+
+  describe('OAuth helpers — Vercel / callback', () => {
+    it('construit une callback URL stable pour Vercel', () => {
+      expect(getTikTokCallbackUrl('https://film-crew-theta.vercel.app')).toBe(
+        'https://film-crew-theta.vercel.app/tiktok/callback',
+      )
+      expect(getTikTokCallbackUrl('https://film-crew-theta.vercel.app/')).toBe(
+        'https://film-crew-theta.vercel.app/tiktok/callback',
+      )
+    })
+
+    it('construit l’URL d’autorisation TikTok avec scopes et redirect_uri', () => {
+      const url = new URL(buildTikTokAuthorizeUrl({
+        clientKey: 'client_key_demo',
+        redirectUri: 'https://film-crew-theta.vercel.app/tiktok/callback',
+        state: 'state123',
+      }))
+
+      expect(url.origin + url.pathname).toBe('https://www.tiktok.com/v2/auth/authorize/')
+      expect(url.searchParams.get('client_key')).toBe('client_key_demo')
+      expect(url.searchParams.get('response_type')).toBe('code')
+      expect(url.searchParams.get('redirect_uri')).toBe('https://film-crew-theta.vercel.app/tiktok/callback')
+      expect(url.searchParams.get('state')).toBe('state123')
+      expect(url.searchParams.get('scope')).toContain('video.publish')
+      expect(url.searchParams.get('scope')).toContain('video.upload')
+      expect(url.searchParams.get('scope')).toContain('user.info.basic')
+    })
+
+    it('génère un snippet .env.local copiable après échange OAuth', () => {
+      const snippet = buildTikTokEnvSnippet({
+        accessToken: 'act.demo',
+        refreshToken: 'rft.demo',
+        openId: 'open.demo',
+        scope: 'user.info.basic,video.upload,video.publish',
+        expiresIn: 86400,
+        refreshExpiresIn: 31536000,
+        tokenType: 'Bearer',
+      })
+
+      expect(snippet).toContain('TIKTOK_ACCESS_TOKEN=act.demo')
+      expect(snippet).toContain('TIKTOK_REFRESH_TOKEN=rft.demo')
+      expect(snippet).toContain('TIKTOK_OPEN_ID=open.demo')
     })
   })
 
