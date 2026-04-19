@@ -4,7 +4,7 @@ import { join } from 'path'
 import { db } from '@/lib/db/connection'
 import { clip } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
-import { executeWithFailover, persistRegenerationAttempt } from '@/lib/providers/failover'
+import { executeWithFailover, persistRegenerationAttempt, FailoverError } from '@/lib/providers/failover'
 import type { ImageProvider, VideoProvider } from '@/lib/providers/types'
 import { logger } from '@/lib/logger'
 
@@ -130,11 +130,17 @@ async function regenerateStoryboardScene(
       failoverOccurred,
     })
   } catch (e) {
-    const errorMsg = (e as Error).message
-    providerUsed = 'none'
-    failoverOccurred = false
-    regenerationError = errorMsg
-    logger.warn({ event: 'regenerate_storyboard_failed', runId, sceneIndex, error: errorMsg })
+    if (e instanceof FailoverError) {
+      providerUsed = e.providerUsed
+      failoverOccurred = e.failoverOccurred
+      failoverChain = e.failoverChain
+      regenerationError = e.message
+    } else {
+      providerUsed = 'none'
+      failoverOccurred = false
+      regenerationError = (e as Error).message
+    }
+    logger.warn({ event: 'regenerate_storyboard_failed', runId, sceneIndex, error: regenerationError, providerUsed, failoverOccurred })
   }
 
   // Persister la tentative dans failover-log.json (toujours, succès ou échec)
@@ -287,11 +293,17 @@ async function regenerateVideoScene(
       failoverOccurred,
     })
   } catch (e) {
-    const errorMsg = (e as Error).message
-    providerUsed = 'none'
-    failoverOccurred = false
-    regenerationError = errorMsg
-    logger.warn({ event: 'regenerate_video_failed', runId, sceneIndex, error: errorMsg })
+    if (e instanceof FailoverError) {
+      providerUsed = e.providerUsed
+      failoverOccurred = e.failoverOccurred
+      failoverChain = e.failoverChain
+      regenerationError = e.message
+    } else {
+      providerUsed = 'none'
+      failoverOccurred = false
+      regenerationError = (e as Error).message
+    }
+    logger.warn({ event: 'regenerate_video_failed', runId, sceneIndex, error: regenerationError, providerUsed, failoverOccurred })
 
     // Marquer le clip comme failed en DB
     await db.insert(clip).values({

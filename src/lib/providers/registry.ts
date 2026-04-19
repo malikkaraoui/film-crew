@@ -36,6 +36,15 @@ class ProviderRegistry {
     return null
   }
 
+  async getFallbackExcluding(type: string, excludeNames: Set<string>): Promise<BaseProvider | null> {
+    const list = this.getByType(type).filter((p) => !excludeNames.has(p.name))
+    for (const provider of list) {
+      const health = await provider.healthCheck()
+      if (health.status === 'free' || health.status === 'degraded') return provider
+    }
+    return null
+  }
+
   async healthCheckAll(): Promise<Map<string, { name: string; health: ProviderHealth }[]>> {
     const results = new Map<string, { name: string; health: ProviderHealth }[]>()
 

@@ -10,6 +10,7 @@ import { piperProvider } from './tts/piper'
 import { systemTtsProvider } from './tts/system-tts'
 import { stabilityProvider } from './image/stability'
 import { falImageProvider } from './image/fal'
+import { localPlaceholderProvider } from './image/local-placeholder'
 import { pexelsProvider } from './stock/pexels'
 import { pixabayProvider } from './stock/pixabay'
 import type { TTSProvider } from './types'
@@ -60,9 +61,10 @@ export function bootstrapProviders(): void {
     }
   }
 
-  // Image (storyboard) — FAL FLUX en priorité, Stability en fallback
+  // Image (storyboard) — FAL FLUX en priorité, Stability en fallback, local-placeholder en dernier recours
   registry.register(falImageProvider)
   registry.register(stabilityProvider)
+  registry.register(localPlaceholderProvider)
 
   // Stock
   registry.register(pexelsProvider)

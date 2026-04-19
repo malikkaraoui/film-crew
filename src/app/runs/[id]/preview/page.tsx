@@ -168,9 +168,14 @@ export default function PreviewPage() {
   const hasStoryboard = generatedImages.length > 0
   const mode = manifest?.mode ?? 'none'
 
-  // Failovers visibles : provider qui a basculé OU régénération ayant échoué
+  // Failovers visibles :
+  // - RegenerationAttempt avec failover ou en échec
+  // - FailoverEvent brut (persisté par executeWithFailover, pas de champ "success")
   const visibleFailovers = failoverLog.filter(
-    (e) => (e.failoverOccurred ?? false) || (e.success === false)
+    (e) =>
+      (e.failoverOccurred ?? false) ||
+      (e.success === false) ||
+      ('original' in e && 'fallback' in e && !('success' in e)),
   )
 
   return (
@@ -193,10 +198,12 @@ export default function PreviewPage() {
           </p>
           {visibleFailovers.map((e, i) => (
             <div key={i} className="text-[11px] text-amber-700">
-              {e.failoverOccurred && e.failoverChain
-                ? `Sc.${e.sceneIndex ?? '?'} ${e.type ?? ''} — ${e.failoverChain.original} → ${e.failoverChain.fallback}`
+              {'original' in e && !('success' in e)
+                ? `Bascule — ${e.original} → ${e.fallback} (${e.type ?? ''}) : ${e.reason ?? ''}`
+                : e.failoverOccurred && e.failoverChain
+                ? `Sc.${e.sceneIndex ?? '?'} ${e.type ?? ''} — ${e.failoverChain.original} → ${e.failoverChain.fallback} (via ${e.providerUsed})`
                 : e.success === false
-                ? `Sc.${e.sceneIndex ?? '?'} ${e.type ?? ''} — Échec : ${e.error ?? 'inconnu'}`
+                ? `Sc.${e.sceneIndex ?? '?'} ${e.type ?? ''} — Échec : ${e.providerUsed} — ${e.error ?? 'inconnu'}`
                 : null}
             </div>
           ))}
