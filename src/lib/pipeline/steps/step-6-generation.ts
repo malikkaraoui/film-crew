@@ -28,13 +28,21 @@ export const step6Generation: PipelineStep = {
     }
 
     let totalCost = 0
-    const generatedClips: { sceneIndex: number; filePath: string; seed?: number; costEur: number }[] = []
+    const generatedClips: {
+      sceneIndex: number
+      filePath: string
+      seed?: number
+      costEur: number
+      providerUsed: string
+      failoverOccurred: boolean
+      failoverChain?: { original: string; fallback: string; reason: string }
+    }[] = []
 
     // Générer les clips vidéo
     for (const entry of promptData.prompts) {
       try {
         const clipsDir = join(ctx.storagePath, 'clips')
-        const { result } = await executeWithFailover(
+        const { result, provider, failover } = await executeWithFailover(
           'video',
           async (p) => {
             const video = p as VideoProvider
@@ -56,7 +64,7 @@ export const step6Generation: PipelineStep = {
           runId: ctx.runId,
           stepIndex: entry.sceneIndex,
           prompt: entry.prompt,
-          provider: 'video',
+          provider: provider.name,
           status: 'completed',
           filePath: result.filePath,
           seed: result.seed,
@@ -68,12 +76,17 @@ export const step6Generation: PipelineStep = {
           filePath: result.filePath,
           seed: result.seed,
           costEur: result.costEur,
+          providerUsed: provider.name,
+          failoverOccurred: !!failover,
+          ...(failover ? { failoverChain: { original: failover.original, fallback: failover.fallback, reason: failover.reason } } : {}),
         })
 
         logger.info({
           event: 'clip_generated',
           runId: ctx.runId,
           sceneIndex: entry.sceneIndex,
+          providerUsed: provider.name,
+          failoverOccurred: !!failover,
           costEur: result.costEur,
         })
       } catch (e) {

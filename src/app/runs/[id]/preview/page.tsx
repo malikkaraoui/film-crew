@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 
 type Clip = {
   id: string
@@ -30,6 +31,20 @@ type PreviewManifest = {
   assemblyError: string | null
 }
 
+type FailoverEntry = {
+  type?: string
+  sceneIndex?: number
+  original?: string
+  fallback?: string
+  providerUsed?: string
+  failoverOccurred?: boolean
+  failoverChain?: { original: string; fallback: string; reason: string }
+  success?: boolean
+  error?: string
+  reason?: string
+  timestamp: string
+}
+
 const MODE_LABELS: Record<string, string> = {
   video_finale: 'Vidéo finale',
   animatic: 'Animatic',
@@ -49,25 +64,28 @@ export default function PreviewPage() {
   const [clips, setClips] = useState<Clip[]>([])
   const [storyboard, setStoryboard] = useState<StoryboardImage[]>([])
   const [manifest, setManifest] = useState<PreviewManifest | null>(null)
+  const [failoverLog, setFailoverLog] = useState<FailoverEntry[]>([])
   const [loading, setLoading] = useState(true)
+  const [regenerating, setRegenerating] = useState<Record<number, boolean>>({})
+  const [regenResult, setRegenResult] = useState<Record<number, { ok: boolean; provider: string; failover: boolean; error?: string }>>({})
 
-  const loadClips = async () => {
+  const loadClips = useCallback(async () => {
     try {
       const res = await fetch(`/api/runs/${id}/clips`)
       const json = await res.json()
       if (json.data) setClips(json.data)
     } catch { /* silencieux */ }
-  }
+  }, [id])
 
-  const loadStoryboard = async () => {
+  const loadStoryboard = useCallback(async () => {
     try {
       const res = await fetch(`/api/runs/${id}/storyboard`)
       const json = await res.json()
       if (json.data?.images) setStoryboard(json.data.images)
     } catch { /* silencieux */ }
-  }
+  }, [id])
 
-  const loadManifest = async () => {
+  const loadManifest = useCallback(async () => {
     try {
       const res = await fetch(`/api/runs/${id}/preview-manifest`)
       if (res.ok) {
@@ -75,11 +93,71 @@ export default function PreviewPage() {
         if (json.data) setManifest(json.data)
       }
     } catch { /* silencieux */ }
-  }
+  }, [id])
+
+  const loadFailoverLog = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/runs/${id}/failover-log`)
+      if (res.ok) {
+        const json = await res.json()
+        if (json.data) setFailoverLog(json.data)
+      }
+    } catch { /* silencieux */ }
+  }, [id])
 
   useEffect(() => {
-    void Promise.all([loadClips(), loadStoryboard(), loadManifest()]).then(() => setLoading(false))
-  }, [id])
+    void Promise.all([loadClips(), loadStoryboard(), loadManifest(), loadFailoverLog()])
+      .then(() => setLoading(false))
+  }, [loadClips, loadStoryboard, loadManifest, loadFailoverLog])
+
+  async function handleRegenerate(type: 'storyboard' | 'video', sceneIndex: number) {
+    setRegenerating((prev) => ({ ...prev, [sceneIndex]: true }))
+    setRegenResult((prev) => {
+      const next = { ...prev }
+      delete next[sceneIndex]
+      return next
+    })
+
+    try {
+      const res = await fetch(`/api/runs/${id}/regenerate-scene`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, sceneIndex }),
+      })
+      const json = await res.json()
+
+      if (res.ok && json.data) {
+        setRegenResult((prev) => ({
+          ...prev,
+          [sceneIndex]: {
+            ok: true,
+            provider: json.data.providerUsed,
+            failover: json.data.failoverOccurred,
+          },
+        }))
+        // Recharger storyboard + failover-log après régénération réussie
+        await Promise.all([loadStoryboard(), loadFailoverLog()])
+      } else {
+        setRegenResult((prev) => ({
+          ...prev,
+          [sceneIndex]: {
+            ok: false,
+            provider: json.error?.providerUsed ?? 'none',
+            failover: false,
+            error: json.error?.message ?? 'Erreur inconnue',
+          },
+        }))
+        await loadFailoverLog()
+      }
+    } catch {
+      setRegenResult((prev) => ({
+        ...prev,
+        [sceneIndex]: { ok: false, provider: 'none', failover: false, error: 'Erreur réseau' },
+      }))
+    } finally {
+      setRegenerating((prev) => ({ ...prev, [sceneIndex]: false }))
+    }
+  }
 
   if (loading) return <p className="text-sm text-muted-foreground">Chargement...</p>
 
@@ -89,6 +167,11 @@ export default function PreviewPage() {
   const hasClips = completedClips.length > 0
   const hasStoryboard = generatedImages.length > 0
   const mode = manifest?.mode ?? 'none'
+
+  // Failovers visibles : provider qui a basculé OU régénération ayant échoué
+  const visibleFailovers = failoverLog.filter(
+    (e) => (e.failoverOccurred ?? false) || (e.success === false)
+  )
 
   return (
     <div className="space-y-6">
@@ -101,6 +184,24 @@ export default function PreviewPage() {
           <Badge variant="outline" className="text-xs">Audio</Badge>
         )}
       </div>
+
+      {/* Bandeau failover — honnête et non masqué */}
+      {visibleFailovers.length > 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3 space-y-1">
+          <p className="text-xs font-medium text-amber-800">
+            {visibleFailovers.length} bascule(s) / échec(s) provider sur ce run
+          </p>
+          {visibleFailovers.map((e, i) => (
+            <div key={i} className="text-[11px] text-amber-700">
+              {e.failoverOccurred && e.failoverChain
+                ? `Sc.${e.sceneIndex ?? '?'} ${e.type ?? ''} — ${e.failoverChain.original} → ${e.failoverChain.fallback}`
+                : e.success === false
+                ? `Sc.${e.sceneIndex ?? '?'} ${e.type ?? ''} — Échec : ${e.error ?? 'inconnu'}`
+                : null}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Player vidéo ou animatic */}
       {hasPlayable && (
@@ -141,33 +242,64 @@ export default function PreviewPage() {
         </div>
       )}
 
-      {/* Storyboard comme preview visuelle */}
-      {hasStoryboard && (
+      {/* Storyboard avec boutons de régénération ciblée */}
+      {storyboard.length > 0 && (
         <div className="space-y-3">
-          <h2 className="text-sm font-medium">Storyboard — {generatedImages.length} scène(s)</h2>
+          <h2 className="text-sm font-medium">
+            Storyboard — {storyboard.length} scène(s)
+            <span className="ml-2 text-[10px] font-normal text-muted-foreground">
+              (bouton Régénérer = scène ciblée uniquement)
+            </span>
+          </h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {generatedImages.map((img) => (
-              <div key={img.sceneIndex} className="rounded-lg border overflow-hidden">
-                <div className="aspect-[9/16] bg-muted relative">
-                  <span className="absolute top-2 left-2 rounded-full bg-background/80 px-2 py-0.5 text-xs font-mono">
-                    {img.sceneIndex}
-                  </span>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/api/runs/${id}/storyboard/image/${img.sceneIndex}`}
-                    alt={`Scène ${img.sceneIndex}`}
-                    className="w-full h-full object-cover"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-                  />
+            {storyboard.map((img) => {
+              const regen = regenResult[img.sceneIndex]
+              const isRegenerating = regenerating[img.sceneIndex] ?? false
+
+              return (
+                <div key={img.sceneIndex} className="rounded-lg border overflow-hidden">
+                  <div className="aspect-9/16 bg-muted relative">
+                    <span className="absolute top-2 left-2 rounded-full bg-background/80 px-2 py-0.5 text-xs font-mono z-10">
+                      {img.sceneIndex}
+                    </span>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/api/runs/${id}/storyboard/image/${img.sceneIndex}`}
+                      alt={`Scène ${img.sceneIndex}`}
+                      className="w-full h-full object-cover"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                    />
+                  </div>
+                  <div className="p-2 space-y-1.5">
+                    <p className="text-xs text-muted-foreground line-clamp-2">{img.description}</p>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <Badge variant="secondary" className="text-[9px]">
+                        {img.status === 'generated' ? 'Généré' : img.status}
+                      </Badge>
+                      {regen && (
+                        <Badge
+                          variant={regen.ok ? 'default' : 'destructive'}
+                          className="text-[9px]"
+                        >
+                          {regen.ok
+                            ? `✓ ${regen.provider}${regen.failover ? ' (basculé)' : ''}`
+                            : `✗ ${regen.error ?? 'Échec'}`}
+                        </Badge>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-[10px] h-6"
+                      onClick={() => handleRegenerate('storyboard', img.sceneIndex)}
+                      disabled={isRegenerating}
+                    >
+                      {isRegenerating ? 'Régénération...' : 'Régénérer'}
+                    </Button>
+                  </div>
                 </div>
-                <div className="p-2">
-                  <p className="text-xs text-muted-foreground line-clamp-2">{img.description}</p>
-                  <Badge variant="secondary" className="text-[9px] mt-1">
-                    {img.status === 'generated' ? 'Généré' : img.status}
-                  </Badge>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
@@ -177,21 +309,30 @@ export default function PreviewPage() {
         <div className="space-y-3">
           <h2 className="text-sm font-medium">Clips vidéo — {completedClips.length}</h2>
           <div className="flex gap-2 overflow-x-auto pb-2">
-            {clips.map((clip) => (
-              <div
-                key={clip.id}
-                className="flex-shrink-0 w-28 rounded-lg border p-2"
-              >
-                <div className="aspect-[9/16] rounded bg-muted flex items-center justify-center mb-1">
-                  <span className="text-xs font-mono text-muted-foreground">{clip.stepIndex}</span>
+            {clips.map((c) => (
+              <div key={c.id} className="shrink-0 w-28 rounded-lg border p-2 space-y-1">
+                <div className="aspect-9/16 rounded bg-muted flex items-center justify-center">
+                  <span className="text-xs font-mono text-muted-foreground">{c.stepIndex}</span>
                 </div>
                 <Badge
-                  variant={clip.status === 'completed' ? 'default' : 'destructive'}
+                  variant={c.status === 'completed' ? 'default' : 'destructive'}
                   className="text-[9px] w-full justify-center"
                 >
-                  {clip.status === 'completed' ? 'OK' : 'Échec'}
+                  {c.status === 'completed' ? 'OK' : 'Échec'}
                 </Badge>
-                <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{clip.prompt}</p>
+                {c.provider && c.provider !== 'video' && (
+                  <p className="text-[9px] text-muted-foreground text-center">{c.provider}</p>
+                )}
+                <p className="text-[10px] text-muted-foreground line-clamp-2">{c.prompt}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-[10px] h-6"
+                  onClick={() => handleRegenerate('video', c.stepIndex)}
+                  disabled={regenerating[c.stepIndex] ?? false}
+                >
+                  {regenerating[c.stepIndex] ? '...' : 'Régénérer'}
+                </Button>
               </div>
             ))}
           </div>

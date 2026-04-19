@@ -1,3 +1,5 @@
+import { readFile, writeFile, mkdir } from 'fs/promises'
+import { join } from 'path'
 import { registry } from './registry'
 import { bootstrapProviders } from './bootstrap'
 import { createProviderLog } from '@/lib/db/queries/logs'
@@ -15,6 +17,18 @@ export type FailoverEvent = {
   timestamp: string
 }
 
+export type RegenerationAttempt = {
+  type: 'storyboard' | 'video' | 'audio'
+  sceneIndex?: number
+  providerUsed: string
+  failoverOccurred: boolean
+  failoverChain?: { original: string; fallback: string; reason: string }
+  success: boolean
+  artefactPath?: string | null
+  error?: string
+  timestamp: string
+}
+
 // In-memory buffer des derniers failovers (consultable via API)
 const recentFailovers: FailoverEvent[] = []
 const MAX_FAILOVER_HISTORY = 50
@@ -25,6 +39,59 @@ export function getRecentFailovers(): FailoverEvent[] {
 
 export function clearDismissedFailovers(): void {
   recentFailovers.length = 0
+}
+
+/**
+ * Persiste un événement de failover dans storage/runs/{runId}/failover-log.json.
+ * Non bloquant — les erreurs d'I/O sont silencieuses.
+ */
+async function persistFailoverEvent(runId: string, event: FailoverEvent): Promise<void> {
+  try {
+    const storagePath = join(process.cwd(), 'storage', 'runs', runId)
+    const logPath = join(storagePath, 'failover-log.json')
+
+    let log: FailoverEvent[] = []
+    try {
+      log = JSON.parse(await readFile(logPath, 'utf-8'))
+    } catch { /* fichier absent, on repart de zéro */ }
+
+    log.unshift(event)
+    await writeFile(logPath, JSON.stringify(log, null, 2))
+  } catch { /* persistance non bloquante */ }
+}
+
+/**
+ * Persiste une tentative de régénération dans storage/runs/{runId}/failover-log.json.
+ */
+export async function persistRegenerationAttempt(
+  runId: string,
+  attempt: RegenerationAttempt,
+): Promise<void> {
+  try {
+    const storagePath = join(process.cwd(), 'storage', 'runs', runId)
+    await mkdir(storagePath, { recursive: true })
+    const logPath = join(storagePath, 'failover-log.json')
+
+    let log: (FailoverEvent | RegenerationAttempt)[] = []
+    try {
+      log = JSON.parse(await readFile(logPath, 'utf-8'))
+    } catch { /* fichier absent */ }
+
+    log.unshift(attempt)
+    await writeFile(logPath, JSON.stringify(log, null, 2))
+  } catch { /* non bloquant */ }
+}
+
+/**
+ * Lit le failover-log.json d'un run.
+ */
+export async function readFailoverLog(runId: string): Promise<(FailoverEvent | RegenerationAttempt)[]> {
+  try {
+    const logPath = join(process.cwd(), 'storage', 'runs', runId, 'failover-log.json')
+    return JSON.parse(await readFile(logPath, 'utf-8'))
+  } catch {
+    return []
+  }
 }
 
 /**
@@ -82,10 +149,15 @@ export async function executeWithFailover<T>(
       timestamp: new Date().toISOString(),
     }
 
-    // Enregistrer l'événement
+    // Enregistrer l'événement en mémoire
     recentFailovers.unshift(failoverEvent)
     if (recentFailovers.length > MAX_FAILOVER_HISTORY) {
       recentFailovers.pop()
+    }
+
+    // Persister sur disque si runId fourni (non bloquant)
+    if (runId) {
+      persistFailoverEvent(runId, failoverEvent).catch(() => {})
     }
 
     logger.info({
