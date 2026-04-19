@@ -1,4 +1,4 @@
-import { readFile, writeFile, access } from 'fs/promises'
+import { readFile, writeFile, access, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { logger } from '@/lib/logger'
 import type { PipelineStep, StepContext, StepResult } from '../types'
@@ -9,17 +9,24 @@ export const step7Preview: PipelineStep = {
 
   async execute(ctx: StepContext): Promise<StepResult> {
     // Lire le manifest de génération
-    let manifest: { clips: { sceneIndex: number; filePath: string }[]; audioPath: string | null }
+    let genManifest: { clips: { sceneIndex: number; filePath: string }[]; audioPath: string | null }
     try {
       const raw = await readFile(join(ctx.storagePath, 'generation-manifest.json'), 'utf-8')
-      manifest = JSON.parse(raw)
+      genManifest = JSON.parse(raw)
     } catch {
       return { success: false, costEur: 0, outputData: null, error: 'generation-manifest.json introuvable' }
     }
 
-    // Vérifier que les fichiers existent
+    // Lire le storyboard manifest pour inclure les images dans le preview
+    let storyboardImages: { sceneIndex: number; filePath: string; status: string }[] = []
+    try {
+      const raw = await readFile(join(ctx.storagePath, 'storyboard', 'manifest.json'), 'utf-8')
+      storyboardImages = JSON.parse(raw).images ?? []
+    } catch { /* pas de storyboard */ }
+
+    // Vérifier les clips vidéo existants
     const validClips: string[] = []
-    for (const clip of manifest.clips) {
+    for (const clip of genManifest.clips) {
       try {
         await access(clip.filePath)
         validClips.push(clip.filePath)
@@ -28,17 +35,25 @@ export const step7Preview: PipelineStep = {
       }
     }
 
-    // Générer le fichier de preview (concat list pour FFmpeg)
-    const concatList = validClips.map((p) => `file '${p}'`).join('\n')
-    const concatPath = join(ctx.storagePath, 'final', 'concat.txt')
-    await writeFile(concatPath, concatList)
+    // Sécuriser le dossier final/
+    const finalDir = join(ctx.storagePath, 'final')
+    await mkdir(finalDir, { recursive: true })
 
-    // Sauvegarder le manifest preview
+    // Générer le fichier concat si des clips existent
+    const concatPath = join(finalDir, 'concat.txt')
+    if (validClips.length > 0) {
+      const concatList = validClips.map((p) => `file '${p}'`).join('\n')
+      await writeFile(concatPath, concatList)
+    }
+
+    // Sauvegarder le manifest preview — reflète la réalité du run
     const previewManifest = {
       clips: validClips,
-      audioPath: manifest.audioPath,
-      concatPath,
+      storyboardImages: storyboardImages.filter(i => i.status === 'generated').map(i => i.filePath),
+      audioPath: genManifest.audioPath,
+      concatPath: validClips.length > 0 ? concatPath : null,
       readyForAssembly: validClips.length > 0,
+      hasStoryboard: storyboardImages.some(i => i.status === 'generated'),
       createdAt: new Date().toISOString(),
     }
     await writeFile(
@@ -46,17 +61,15 @@ export const step7Preview: PipelineStep = {
       JSON.stringify(previewManifest, null, 2),
     )
 
-    // Note : l'assemblage FFmpeg sera déclenché par l'utilisateur
-    // ou automatiquement si tout est validé
-
     return {
       success: true,
-      costEur: 0, // Preview local = gratuit
+      costEur: 0,
       outputData: {
         validClipCount: validClips.length,
-        totalClips: manifest.clips.length,
-        hasAudio: !!manifest.audioPath,
-        readyForAssembly: validClips.length > 0,
+        totalClips: genManifest.clips.length,
+        hasAudio: !!genManifest.audioPath,
+        hasStoryboard: previewManifest.hasStoryboard,
+        readyForAssembly: previewManifest.readyForAssembly,
       },
     }
   },

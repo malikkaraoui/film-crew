@@ -134,7 +134,7 @@ export const step6Generation: PipelineStep = {
     )
 
     return {
-      success: generatedClips.length > 0,
+      success: true, // on continue même avec 0 clips — les providers vidéo sont optionnels en V1
       costEur: totalCost,
       outputData: {
         clipCount: generatedClips.length,
