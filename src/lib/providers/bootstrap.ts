@@ -7,6 +7,7 @@ import { ltxProvider } from './video/ltx'
 import { fishAudioProvider } from './tts/fish-audio'
 import { kokoroProvider } from './tts/kokoro'
 import { piperProvider } from './tts/piper'
+import { systemTtsProvider } from './tts/system-tts'
 import { stabilityProvider } from './image/stability'
 import { falImageProvider } from './image/fal'
 import { pexelsProvider } from './stock/pexels'
@@ -15,14 +16,20 @@ import type { TTSProvider } from './types'
 
 let bootstrapped = false
 
-// Priorité TTS configurable via TTS_PRIORITY (ex: "kokoro-local,piper-local,fish-audio")
+// Priorité TTS configurable via TTS_PRIORITY
 // Désactivation via TTS_DISABLED (ex: "fish-audio" ou "fish-audio,piper-local")
+// Providers disponibles :
+//   kokoro-local  : kokoro-fastapi local (Docker requis)
+//   piper-local   : binaire piper + modèle ONNX requis
+//   system-tts    : TTS natif OS (macOS say + ffmpeg) — prouvé opérationnel
+//   fish-audio    : API cloud (balance requise)
 const TTS_PROVIDERS: Record<string, TTSProvider> = {
   'kokoro-local': kokoroProvider,
   'piper-local': piperProvider,
+  'system-tts': systemTtsProvider,
   'fish-audio': fishAudioProvider,
 }
-const DEFAULT_TTS_PRIORITY = 'kokoro-local,piper-local,fish-audio'
+const DEFAULT_TTS_PRIORITY = 'kokoro-local,piper-local,system-tts,fish-audio'
 
 export function bootstrapProviders(): void {
   if (bootstrapped) return

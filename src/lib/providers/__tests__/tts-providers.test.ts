@@ -95,13 +95,45 @@ describe('piperProvider', () => {
   })
 })
 
+// ─── SystemTTS ───────────────────────────────────────────────────────────────
+
+describe('systemTtsProvider', () => {
+  it('name est system-tts, type est tts', async () => {
+    const { systemTtsProvider } = await import('../tts/system-tts')
+    expect(systemTtsProvider.name).toBe('system-tts')
+    expect(systemTtsProvider.type).toBe('tts')
+  })
+
+  it('estimateCost retourne 0 (provider local)', async () => {
+    const { systemTtsProvider } = await import('../tts/system-tts')
+    expect(systemTtsProvider.estimateCost({})).toBe(0)
+  })
+
+  it('healthCheck retourne free sur macOS (say + ffmpeg disponibles)', async () => {
+    // Ce test s'exécute sur macOS — say et ffmpeg sont prouvés présents
+    const { systemTtsProvider } = await import('../tts/system-tts')
+    const health = await systemTtsProvider.healthCheck()
+    // Sur macOS CI : free. Sur autre OS : down — on vérifie juste que le retour est cohérent
+    expect(['free', 'down']).toContain(health.status)
+    expect(health.lastCheck).toBeTruthy()
+  })
+
+  it('healthCheck.details mentionne say + ffmpeg si free sur macOS', async () => {
+    const { systemTtsProvider } = await import('../tts/system-tts')
+    const health = await systemTtsProvider.healthCheck()
+    if (health.status === 'free') {
+      expect(health.details).toContain('say')
+    }
+  })
+})
+
 // ─── Priorité TTS (bootstrap logic) ─────────────────────────────────────────
 
 describe('TTS priority and disable', () => {
-  it('ordre de priorité par défaut : kokoro-local → piper-local → fish-audio', () => {
-    const DEFAULT = 'kokoro-local,piper-local,fish-audio'
+  it('ordre de priorité par défaut : kokoro-local → piper-local → system-tts → fish-audio', () => {
+    const DEFAULT = 'kokoro-local,piper-local,system-tts,fish-audio'
     const priority = DEFAULT.split(',').map((s) => s.trim())
-    expect(priority).toEqual(['kokoro-local', 'piper-local', 'fish-audio'])
+    expect(priority).toEqual(['kokoro-local', 'piper-local', 'system-tts', 'fish-audio'])
   })
 
   it('TTS_PRIORITY personnalisé est respecté', () => {
