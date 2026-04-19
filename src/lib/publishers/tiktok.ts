@@ -14,7 +14,7 @@ import { logger } from '@/lib/logger'
  *
  * Obtenir un access token :
  * 1. Créer une app sur https://developers.tiktok.com
- * 2. Activer les scopes user.info.basic, video.upload et video.publish
+ * 2. Activer les scopes user.info.profile, video.upload et video.publish
  * 3. Déployer l'app en HTTPS (ex: Vercel) et lancer /tiktok/connect
  * 4. Autoriser le compte TikTok puis échanger le code en access token
  * 5. Définir TIKTOK_ACCESS_TOKEN dans .env.local
@@ -24,7 +24,7 @@ const ACCESS_TOKEN = process.env.TIKTOK_ACCESS_TOKEN || ''
 const CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY || ''
 const CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET || ''
 const BASE_URL = 'https://open.tiktokapis.com/v2'
-const DEFAULT_OAUTH_SCOPES = ['user.info.basic', 'video.upload', 'video.publish']
+const DEFAULT_OAUTH_SCOPES = ['user.info.profile', 'video.upload', 'video.publish']
 
 const TIKTOK_CREDENTIALS_INSTRUCTIONS = [
   'Pour publier sur TikTok, configurer dans .env.local :',
@@ -36,7 +36,7 @@ const TIKTOK_CREDENTIALS_INSTRUCTIONS = [
   '',
   'Obtenir ces credentials :',
   '  1. Créer une app sur https://developers.tiktok.com',
-  '  2. Activer les scopes : user.info.basic, video.upload, video.publish',
+  '  2. Activer les scopes : user.info.profile, video.upload, video.publish',
   '  3. Déployer l’app en HTTPS (ex: Vercel) puis ouvrir /tiktok/connect',
   '  4. Autoriser le compte TikTok et récupérer access_token + refresh_token',
   '  5. Coller les tokens dans .env.local puis redémarrer l’app',
