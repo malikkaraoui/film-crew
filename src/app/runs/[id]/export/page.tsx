@@ -22,17 +22,15 @@ export default function ExportPage() {
   const [imageCount, setImageCount] = useState(0)
   const [loadingArtifacts, setLoadingArtifacts] = useState(false)
 
-  useEffect(() => {
-    loadExportData()
-  }, [id])
-
-  async function loadExportData() {
+  const loadExportData = async () => {
     const res = await fetch(`/api/runs/${id}/export`)
     const json = await res.json()
     if (json.data) {
       setMetadata(json.data.metadata)
     }
   }
+
+  useEffect(() => { void loadExportData() }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleRegenerate() {
     setRegenerating(true)

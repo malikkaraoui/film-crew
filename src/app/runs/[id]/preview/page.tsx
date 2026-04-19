@@ -28,11 +28,7 @@ export default function PreviewPage() {
   const [storyboard, setStoryboard] = useState<StoryboardImage[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    Promise.all([loadClips(), loadStoryboard()]).then(() => setLoading(false))
-  }, [id])
-
-  async function loadClips() {
+  const loadClips = async () => {
     try {
       const res = await fetch(`/api/runs/${id}/clips`)
       const json = await res.json()
@@ -40,13 +36,17 @@ export default function PreviewPage() {
     } catch { /* silencieux */ }
   }
 
-  async function loadStoryboard() {
+  const loadStoryboard = async () => {
     try {
       const res = await fetch(`/api/runs/${id}/storyboard`)
       const json = await res.json()
       if (json.data?.images) setStoryboard(json.data.images)
     } catch { /* silencieux */ }
   }
+
+  useEffect(() => { // eslint-disable-line react-hooks/exhaustive-deps
+    void Promise.all([loadClips(), loadStoryboard()]).then(() => setLoading(false))
+  }, [id])
 
   if (loading) return <p className="text-sm text-muted-foreground">Chargement...</p>
 

@@ -40,17 +40,7 @@ export function Topbar() {
   const [costAlert, setCostAlert] = useState(false)
   const [failovers, setFailovers] = useState<FailoverEvent[]>([])
 
-  useEffect(() => {
-    loadProviders()
-    loadActiveRun()
-    loadFailovers()
-    const pi = setInterval(loadProviders, 60_000)
-    const ri = setInterval(loadActiveRun, 3_000)
-    const fi = setInterval(loadFailovers, 5_000)
-    return () => { clearInterval(pi); clearInterval(ri); clearInterval(fi) }
-  }, [])
-
-  async function loadProviders() {
+  const loadProviders = async () => {
     try {
       const res = await fetch('/api/providers')
       const json = await res.json()
@@ -58,7 +48,7 @@ export function Topbar() {
     } catch { /* silencieux */ }
   }
 
-  async function loadActiveRun() {
+  const loadActiveRun = async () => {
     try {
       const res = await fetch('/api/runs/recovery')
       const json = await res.json()
@@ -80,13 +70,23 @@ export function Topbar() {
     } catch { /* silencieux */ }
   }
 
-  async function loadFailovers() {
+  const loadFailovers = async () => {
     try {
       const res = await fetch('/api/providers/failovers')
       const json = await res.json()
       if (json.data) setFailovers(json.data)
     } catch { /* silencieux */ }
   }
+
+  useEffect(() => { // eslint-disable-line react-hooks/exhaustive-deps
+    void loadProviders()
+    void loadActiveRun()
+    void loadFailovers()
+    const pi = setInterval(() => void loadProviders(), 60_000)
+    const ri = setInterval(() => void loadActiveRun(), 3_000)
+    const fi = setInterval(() => void loadFailovers(), 5_000)
+    return () => { clearInterval(pi); clearInterval(ri); clearInterval(fi) }
+  }, [])
 
   async function dismissFailovers() {
     await fetch('/api/providers/failovers', { method: 'DELETE' })

@@ -72,7 +72,7 @@ export default function RunPage() {
       {run.status === 'failed' && (
         <div className="mt-6 rounded-md border border-destructive bg-destructive/10 p-4">
           <p className="text-sm text-destructive">
-            Le pipeline a échoué à l'étape {currentStep}.
+            Le pipeline a échoué à l&apos;étape {currentStep}.
             {run.steps.find(s => s.stepNumber === currentStep)?.error && (
               <span className="block mt-1 font-mono text-xs">{run.steps.find(s => s.stepNumber === currentStep)?.error}</span>
             )}

@@ -58,7 +58,7 @@ export default function SettingsPage() {
     <div className="max-w-lg">
       <h1 className="text-xl font-semibold">Réglages</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        Limites de coûts et seuils d'alerte.
+        Limites de coûts et seuils d&apos;alerte.
       </p>
 
       <div className="mt-4 flex flex-col gap-4">

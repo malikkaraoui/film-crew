@@ -43,7 +43,7 @@ export function StoryboardGrid({ images, onValidate, onReject, onValidateAll, on
   if (images.length === 0) {
     return (
       <p className="text-sm text-muted-foreground py-8 text-center">
-        Aucune image de storyboard. Lancez l'étape 4 pour les générer.
+        Aucune image de storyboard. Lancez l&apos;étape 4 pour les générer.
       </p>
     )
   }

@@ -17,7 +17,7 @@ export default function ChainsPage() {
     if (json.data) setChains(json.data)
   }
 
-  useEffect(() => { loadChains() }, [])
+  useEffect(() => { void loadChains() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleCreate(data: { name: string; langSource: string; audience?: string }) {
     const res = await fetch('/api/chains', {

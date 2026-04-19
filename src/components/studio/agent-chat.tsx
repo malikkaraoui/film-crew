@@ -55,7 +55,7 @@ export function AgentChat({ traces, loading }: { traces: TraceEntry[]; loading: 
           Aucune trace de réunion pour ce run.
         </p>
         <p className="text-xs text-muted-foreground mt-1">
-          La réunion démarre automatiquement à l'étape Brainstorm.
+          La réunion démarre automatiquement à l&apos;étape Brainstorm.
         </p>
       </div>
     )
