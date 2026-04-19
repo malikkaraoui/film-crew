@@ -23,9 +23,12 @@ const STATUS_LABELS: Record<string, { label: string; variant: 'default' | 'secon
   degraded: { label: 'Dégradé', variant: 'outline' },
 }
 
+type TestState = { status: 'idle' } | { status: 'testing' } | { status: 'done'; result: string; ok: boolean }
+
 export default function ServicesPage() {
   const [providers, setProviders] = useState<ProviderInfo[]>([])
   const [loading, setLoading] = useState(true)
+  const [testStates, setTestStates] = useState<Record<string, TestState>>({})
 
   async function loadProviders() {
     const res = await fetch('/api/providers')
@@ -41,11 +44,23 @@ export default function ServicesPage() {
   }, [])
 
   async function handleTest(name: string) {
-    const res = await fetch(`/api/providers/${name}/test`, { method: 'POST' })
-    const json = await res.json()
-    if (json.data) {
-      loadProviders()
+    setTestStates(prev => ({ ...prev, [name]: { status: 'testing' } }))
+    try {
+      const res = await fetch(`/api/providers/${name}/test`, { method: 'POST' })
+      const json = await res.json()
+      if (json.data?.health) {
+        const h = json.data.health
+        const ok = h.status === 'free' || h.status === 'busy'
+        const label = STATUS_LABELS[h.status]?.label ?? h.status
+        setTestStates(prev => ({ ...prev, [name]: { status: 'done', result: label + (h.details ? ` — ${h.details}` : ''), ok } }))
+      } else {
+        setTestStates(prev => ({ ...prev, [name]: { status: 'done', result: json.error?.message ?? 'Erreur inconnue', ok: false } }))
+      }
+      void loadProviders()
+    } catch (e) {
+      setTestStates(prev => ({ ...prev, [name]: { status: 'done', result: (e as Error).message, ok: false } }))
     }
+    setTimeout(() => setTestStates(prev => ({ ...prev, [name]: { status: 'idle' } })), 5000)
   }
 
   return (
@@ -77,9 +92,20 @@ export default function ServicesPage() {
                     </div>
                     <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
                   </div>
-                  <Button variant="ghost" size="sm" onClick={() => handleTest(p.name)}>
-                    Tester
-                  </Button>
+                  {(() => {
+                    const ts = testStates[p.name] ?? { status: 'idle' }
+                    if (ts.status === 'testing') {
+                      return <Button variant="ghost" size="sm" disabled className="min-w-[120px] text-xs animate-pulse">Test en cours...</Button>
+                    }
+                    if (ts.status === 'done') {
+                      return (
+                        <span className={`text-xs font-medium px-2 py-1 rounded ${ts.ok ? 'text-green-700 bg-green-50' : 'text-red-700 bg-red-50'}`}>
+                          {ts.ok ? '\u2705' : '\u274C'} {ts.result}
+                        </span>
+                      )
+                    }
+                    return <Button variant="ghost" size="sm" className="min-w-[120px]" onClick={() => handleTest(p.name)}>Tester</Button>
+                  })()}
                 </CardHeader>
               </Card>
             )
