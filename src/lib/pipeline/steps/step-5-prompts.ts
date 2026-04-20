@@ -71,6 +71,11 @@ export const step5Prompts: PipelineStep = {
       ? `\nDirection créative : ${directorPlan.creativeDirection}\nTon : ${directorPlan.tone} | Style : ${directorPlan.style}`
       : ''
 
+    // Contexte template injecté dans le system prompt (10D)
+    const templateContext = ctx.template
+      ? `\nTemplate : ${ctx.template.name} — prefix imposé : "${ctx.template.promptPrefix}"\nSous-titres : ${ctx.template.subtitleStyle}\nRythme visuel : ${ctx.template.rhythm}`
+      : ''
+
     const { result } = await executeWithFailover(
       'llm',
       async (p) => {
@@ -89,7 +94,7 @@ Chaque prompt doit :
 - Faire 60-100 mots
 - Inclure 1 seul mouvement caméra
 - Inclure le lighting obligatoire
-- Être cinématographique, précis et générable par IA vidéo${brandContext}${directorContext}
+- Être cinématographique, précis et générable par IA vidéo${brandContext}${directorContext}${templateContext}
 
 Retourne un JSON : { "prompts": [{ "sceneIndex": 1, "prompt": "...", "negativePrompt": "..." }] }
 Retourne UNIQUEMENT le JSON.`,

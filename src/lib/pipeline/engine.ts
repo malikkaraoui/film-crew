@@ -6,6 +6,7 @@ import { db } from '@/lib/db/connection'
 import { runStep } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { existsSync } from 'fs'
+import { loadTemplate } from '@/lib/templates/loader'
 import type { StepContext, PipelineStep } from './types'
 
 // Import des étapes
@@ -45,6 +46,12 @@ export async function executePipeline(runId: string): Promise<void> {
     ? join(storagePath, 'intention.json')
     : null
 
+  // Charger le template de style si le run en a un (10D)
+  const template = run.template ? await loadTemplate(run.template) : null
+  if (run.template) {
+    logger.info({ event: 'template_loaded', runId, templateId: run.template, found: !!template })
+  }
+
   const ctx: StepContext = {
     runId,
     chainId: run.chainId,
@@ -52,6 +59,7 @@ export async function executePipeline(runId: string): Promise<void> {
     brandKitPath: chain.brandKitPath,
     storagePath,
     intentionPath,
+    template,
   }
 
   const startStep = run.currentStep ?? 1

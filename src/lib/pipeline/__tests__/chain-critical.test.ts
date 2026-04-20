@@ -142,6 +142,7 @@ describe('Chaîne critique — parsing et cohérence', () => {
         brandKitPath: null,
         storagePath: FIXTURE_DIR,
         intentionPath: null,
+        template: null,
       })
 
       expect(result.success).toBe(true)

@@ -1,3 +1,5 @@
+import type { StyleTemplate } from '@/lib/templates/loader'
+
 export type StepContext = {
   runId: string
   chainId: string
@@ -6,6 +8,8 @@ export type StepContext = {
   storagePath: string
   /** Chemin absolu vers intention.json — présent si le questionnaire 10B a été rempli */
   intentionPath: string | null
+  /** Template de style chargé depuis templates/*.yaml — présent si le run a un template (10D) */
+  template: StyleTemplate | null
 }
 
 export type StepResult = {

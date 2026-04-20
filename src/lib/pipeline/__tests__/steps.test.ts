@@ -21,6 +21,7 @@ describe('Pipeline Steps', () => {
         brandKitPath: null,
         storagePath: '/tmp/test',
         intentionPath: null,
+        template: null,
       })
 
       expect(result.success).toBe(true)
@@ -45,6 +46,7 @@ describe('Pipeline Steps', () => {
         brandKitPath: null,
         storagePath: '/tmp/test',
         intentionPath: null,
+        template: null,
       })
 
       const data = result.outputData as Record<string, unknown>
@@ -74,6 +76,7 @@ describe('Pipeline Steps', () => {
         brandKitPath: null,
         storagePath: FIXTURE_DIR,
         intentionPath,
+        template: null,
       })
 
       const data = result.outputData as Record<string, unknown>
@@ -104,8 +107,8 @@ describe('Pipeline Steps', () => {
       const idea = 'Même idée brute'
 
       const [result1, result2] = await Promise.all([
-        step1Idea.execute({ runId: 'r1', chainId: 'c', idea, brandKitPath: null, storagePath: FIXTURE_DIR, intentionPath: path1 }),
-        step1Idea.execute({ runId: 'r2', chainId: 'c', idea, brandKitPath: null, storagePath: FIXTURE_DIR, intentionPath: path2 }),
+        step1Idea.execute({ runId: 'r1', chainId: 'c', idea, brandKitPath: null, storagePath: FIXTURE_DIR, intentionPath: path1, template: null }),
+        step1Idea.execute({ runId: 'r2', chainId: 'c', idea, brandKitPath: null, storagePath: FIXTURE_DIR, intentionPath: path2, template: null }),
       ])
 
       const d1 = result1.outputData as Record<string, unknown>
@@ -131,7 +134,7 @@ describe('Pipeline Steps', () => {
       const idea = 'L\'histoire de l\'eau sur Mars'
 
       // Simuler ce que l'engine fait après step 1
-      const ctx = { runId: 'r', chainId: 'c', idea, brandKitPath: null, storagePath: FIXTURE_DIR, intentionPath }
+      const ctx = { runId: 'r', chainId: 'c', idea, brandKitPath: null, storagePath: FIXTURE_DIR, intentionPath, template: null }
       const result = await step1Idea.execute(ctx)
       const data = result.outputData as Record<string, unknown>
 

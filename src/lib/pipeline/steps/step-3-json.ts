@@ -41,6 +41,11 @@ export const step3Json: PipelineStep = {
       ? `Brief de la réunion de production :\n\n${briefContent}\n\nTransforme ce brief en JSON structuré pour la production.`
       : `[FALLBACK — brief absent, idée brute uniquement]\n\nIdée : ${ctx.idea}\n\nTransforme en JSON structuré pour la production.`
 
+    // Contexte template injecté dans le system prompt (10D)
+    const templateContext = ctx.template
+      ? `\n\nTemplate de style imposé : ${ctx.template.name} — ${ctx.template.description}\nStyle : ${ctx.template.style} | Rythme : ${ctx.template.rhythm}\nTransitions recommandées : ${ctx.template.transitions.join(', ')}\nAdapte le nombre de scènes, leur durée et leur rythme en conséquence.`
+      : ''
+
     const { result } = await executeWithFailover(
       'llm',
       async (p) => {
@@ -68,7 +73,7 @@ Le JSON doit contenir :
   "tone": "ton émotionnel",
   "target_duration_s": 90
 }
-Retourne UNIQUEMENT le JSON, sans markdown ni explication.`,
+Retourne UNIQUEMENT le JSON, sans markdown ni explication.${templateContext}`,
             },
             {
               role: 'user',

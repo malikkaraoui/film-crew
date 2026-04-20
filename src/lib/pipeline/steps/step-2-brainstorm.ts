@@ -21,6 +21,7 @@ export const step2Brainstorm: PipelineStep = {
       runId: ctx.runId,
       idea: ctx.idea,
       brandKit,
+      template: ctx.template,
     })
 
     const brief = await coordinator.runMeeting()

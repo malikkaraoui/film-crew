@@ -4,6 +4,7 @@ import { createAgentTrace } from '@/lib/db/queries/traces'
 import { updateRunCost } from '@/lib/db/queries/runs'
 import { logger } from '@/lib/logger'
 import type { AgentMessage, AgentRole, MeetingBrief } from '@/types/agent'
+import type { StyleTemplate } from '@/lib/templates/loader'
 
 /**
  * Coordonne une réunion de production entre les 6 agents.
@@ -22,17 +23,20 @@ export class MeetingCoordinator {
   private runId: string
   private idea: string
   private brandKit: string | null
+  private template: StyleTemplate | null
   private onMessage?: (message: AgentMessage) => void
 
   constructor(opts: {
     runId: string
     idea: string
     brandKit?: string | null
+    template?: StyleTemplate | null
     onMessage?: (message: AgentMessage) => void
   }) {
     this.runId = opts.runId
     this.idea = opts.idea
     this.brandKit = opts.brandKit ?? null
+    this.template = opts.template ?? null
     this.onMessage = opts.onMessage
 
     // Initialiser tous les agents
@@ -53,8 +57,13 @@ export class MeetingCoordinator {
 
     let totalCost = 0
 
+    // Contexte template injecté dans toute la réunion (10D)
+    const templateContext = this.template
+      ? `\n\nTemplate de style : ${this.template.name} — ${this.template.description}\nRythme : ${this.template.rhythm}\nTransitions : ${this.template.transitions.join(', ')}`
+      : ''
+
     // Phase 1 : Mia ouvre la réunion
-    const openingContext = `Nouvelle réunion de production. L'idée du client est : "${this.idea}".${this.brandKit ? `\n\nBrand Kit de la chaîne :\n${this.brandKit}` : ''}\n\nPrésente le brief à l'équipe et lance la discussion. Sois directe et motivante.`
+    const openingContext = `Nouvelle réunion de production. L'idée du client est : "${this.idea}".${this.brandKit ? `\n\nBrand Kit de la chaîne :\n${this.brandKit}` : ''}${templateContext}\n\nPrésente le brief à l'équipe et lance la discussion. Sois directe et motivante.`
 
     const opening = await this.agentSpeak('mia', openingContext)
     totalCost += opening.metadata?.costEur ?? 0
@@ -62,7 +71,10 @@ export class MeetingCoordinator {
     // Phase 2 : Tour de table — chaque agent réagit
     for (const role of MEETING_ORDER.slice(1, -1)) {
       const transcript = this.formatTranscript()
-      const context = `Voici la discussion jusqu'ici :\n\n${transcript}\n\nC'est ton tour de parler. Donne ton avis de ${AGENT_PROFILES[role].title} sur cette idée. Sois concis (3-5 phrases). Challenge les idées des autres si nécessaire.`
+      // Ton spécifique à cet agent selon le template (10D)
+      const agentTone = this.template?.agentTones?.[role]
+      const toneContext = agentTone ? `\n[Ton attendu dans ce style ${this.template!.name} : ${agentTone}]` : ''
+      const context = `Voici la discussion jusqu'ici :\n\n${transcript}\n\nC'est ton tour de parler. Donne ton avis de ${AGENT_PROFILES[role].title} sur cette idée. Sois concis (3-5 phrases). Challenge les idées des autres si nécessaire.${toneContext}`
 
       const msg = await this.agentSpeak(role, context)
       totalCost += msg.metadata?.costEur ?? 0
