@@ -91,6 +91,15 @@ export async function executePipeline(runId: string): Promise<void> {
         return
       }
 
+      // Step 1 peut enrichir ctx.idea avec le prefix d'intention — propager aux steps suivants
+      if (step.stepNumber === 1) {
+        const data = result.outputData as Record<string, unknown> | null
+        if (data?.idea && typeof data.idea === 'string' && data.idea !== ctx.idea) {
+          ctx.idea = data.idea
+          logger.info({ event: 'idea_enriched', runId, answeredCount: data.answeredCount })
+        }
+      }
+
       logger.info({ event: 'step_completed', runId, step: step.name, costEur: result.costEur })
     } catch (e) {
       clearInterval(heartbeatInterval)
