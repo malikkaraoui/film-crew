@@ -5,6 +5,22 @@ import type { LLMProvider } from '@/lib/providers/types'
 import type { PipelineStep, StepContext, StepResult } from '../types'
 import { logger } from '@/lib/logger'
 
+export type DirectorPlan = {
+  runId: string
+  idea: string
+  tone: string
+  style: string
+  creativeDirection: string
+  shotList: {
+    sceneIndex: number
+    intent: string
+    camera: string
+    emotion: string
+    influencedBy: string[]
+  }[]
+  generatedAt: string
+}
+
 export const step3Json: PipelineStep = {
   name: 'JSON structuré',
   stepNumber: 3,
@@ -12,8 +28,10 @@ export const step3Json: PipelineStep = {
   async execute(ctx: StepContext): Promise<StepResult> {
     // Lire le brief produit par la réunion d'agents (step 2)
     let briefContent: string | null = null
+    let brief: { sections?: { agent: string; title: string; content: string }[]; summary?: string } | null = null
     try {
       briefContent = await readFile(join(ctx.storagePath, 'brief.json'), 'utf-8')
+      brief = JSON.parse(briefContent)
     } catch {
       logger.warn({ event: 'brief_missing', runId: ctx.runId, fallback: 'ctx.idea' })
     }
@@ -67,7 +85,7 @@ Retourne UNIQUEMENT le JSON, sans markdown ni explication.`,
     await writeFile(join(ctx.storagePath, 'structure-raw.txt'), result.content)
 
     // Parser le JSON — nettoyage défensif pour qwen3.5:4b
-    let parsed: unknown
+    let parsed: Record<string, unknown>
     try {
       let raw = result.content
       // Retirer les fences markdown ```json ... ```
@@ -75,7 +93,7 @@ Retourne UNIQUEMENT le JSON, sans markdown ni explication.`,
       // Extraire le premier objet JSON
       const jsonMatch = raw.match(/\{[\s\S]*\}/)
       if (!jsonMatch) throw new Error('Aucun objet JSON trouvé dans la réponse')
-      parsed = JSON.parse(jsonMatch[0])
+      parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>
     } catch (e) {
       return {
         success: false,
@@ -88,10 +106,65 @@ Retourne UNIQUEMENT le JSON, sans markdown ni explication.`,
     const outputPath = join(ctx.storagePath, 'structure.json')
     await writeFile(outputPath, JSON.stringify(parsed, null, 2))
 
+    // ── 10C — Director Plan ─────────────────────────────────────────────────
+    // Construire le plan du réalisateur à partir de structure.json + brief
+    // Ce plan est l'artefact intermédiaire explicite : chaque scène y est documentée
+    // avec son intention créative, son plan caméra et son ancrage dans le brief.
+
+    const scenes = (parsed.scenes as { index: number; description: string; camera: string; dialogue: string }[]) ?? []
+    const tone = (parsed.tone as string) ?? 'non défini'
+    const style = (parsed.style as string) ?? 'non défini'
+
+    // Traçabilité : quels agents du brief ont influencé quoi
+    const briefAgents = brief?.sections?.map((s) => s.agent) ?? []
+    const narrativeAgents = briefAgents.filter((a) => ['lenny', 'nael'].includes(a))
+    const cameraAgents = briefAgents.filter((a) => ['laura', 'nico'].includes(a))
+
+    const directorPlan: DirectorPlan = {
+      runId: ctx.runId,
+      idea: ctx.idea,
+      tone,
+      style,
+      creativeDirection: brief?.summary
+        ? `${brief.summary.slice(0, 200)}…`
+        : `Production ${tone} en style ${style}.`,
+      shotList: scenes.map((scene) => ({
+        sceneIndex: scene.index,
+        intent: scene.description?.slice(0, 120) ?? '',
+        camera: scene.camera ?? 'fixe',
+        emotion: tone,
+        influencedBy: scene.index === 1
+          ? [...narrativeAgents, ...cameraAgents]
+          : narrativeAgents.length > 0 ? narrativeAgents : ['structure'],
+      })),
+      generatedAt: new Date().toISOString(),
+    }
+
+    await writeFile(
+      join(ctx.storagePath, 'director-plan.json'),
+      JSON.stringify(directorPlan, null, 2),
+    )
+
+    logger.info({
+      event: 'director_plan_written',
+      runId: ctx.runId,
+      sceneCount: scenes.length,
+      tone,
+      style,
+    })
+
     return {
       success: true,
       costEur: result.costEur,
-      outputData: parsed,
+      outputData: {
+        ...parsed,
+        directorPlan: {
+          tone,
+          style,
+          sceneCount: scenes.length,
+          creativeDirection: directorPlan.creativeDirection,
+        },
+      },
     }
   },
 }

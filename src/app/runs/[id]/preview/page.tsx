@@ -45,6 +45,19 @@ type FailoverEntry = {
   timestamp: string
 }
 
+type DirectorPlan = {
+  tone: string
+  style: string
+  creativeDirection: string
+  shotList: {
+    sceneIndex: number
+    intent: string
+    camera: string
+    emotion: string
+    influencedBy: string[]
+  }[]
+}
+
 type PublishStatus = 'SUCCESS' | 'PROCESSING' | 'FAILED' | 'NO_CREDENTIALS' | 'NO_MEDIA' | 'not_published'
 
 type PublishResult = {
@@ -84,6 +97,7 @@ export default function PreviewPage() {
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null)
   const [publishing, setPublishing] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [directorPlan, setDirectorPlan] = useState<DirectorPlan | null>(null)
   const [regenerating, setRegenerating] = useState<Record<number, boolean>>({})
   const [regenResult, setRegenResult] = useState<Record<number, { ok: boolean; provider: string; failover: boolean; error?: string }>>({})
 
@@ -133,10 +147,20 @@ export default function PreviewPage() {
     } catch { /* silencieux */ }
   }, [id])
 
+  const loadDirectorPlan = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/runs/${id}/director-plan`)
+      if (res.ok) {
+        const json = await res.json()
+        if (json.data) setDirectorPlan(json.data as DirectorPlan)
+      }
+    } catch { /* silencieux */ }
+  }, [id])
+
   useEffect(() => {
-    void Promise.all([loadClips(), loadStoryboard(), loadManifest(), loadFailoverLog(), loadPublishStatus()])
+    void Promise.all([loadClips(), loadStoryboard(), loadManifest(), loadFailoverLog(), loadPublishStatus(), loadDirectorPlan()])
       .then(() => setLoading(false))
-  }, [loadClips, loadStoryboard, loadManifest, loadFailoverLog, loadPublishStatus])
+  }, [loadClips, loadStoryboard, loadManifest, loadFailoverLog, loadPublishStatus, loadDirectorPlan])
 
   // Polling automatique si PROCESSING — arrêt sur état terminal, timeout 5min
   useEffect(() => {
@@ -265,6 +289,37 @@ export default function PreviewPage() {
                 : null}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Direction créative — 10C */}
+      {directorPlan && (
+        <div className="rounded-md border border-violet-200 bg-violet-50/50 p-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-semibold text-violet-800">Direction créative</p>
+            <span className="text-[10px] text-violet-500 border border-violet-300 rounded-full px-1.5">Réalisateur IA</span>
+          </div>
+          <div className="flex gap-3 text-[11px] text-violet-700">
+            <span>Ton : <strong>{directorPlan.tone}</strong></span>
+            <span>·</span>
+            <span>Style : <strong>{directorPlan.style}</strong></span>
+          </div>
+          {directorPlan.creativeDirection && (
+            <p className="text-[11px] text-violet-700 italic leading-relaxed">
+              {directorPlan.creativeDirection}
+            </p>
+          )}
+          {directorPlan.shotList.length > 0 && (
+            <div className="space-y-1 pt-1">
+              {directorPlan.shotList.map((shot) => (
+                <div key={shot.sceneIndex} className="flex gap-2 text-[10px] text-violet-600">
+                  <span className="shrink-0 font-mono font-medium">S{shot.sceneIndex}</span>
+                  <span className="text-muted-foreground">{shot.camera}</span>
+                  <span className="truncate">{shot.intent}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

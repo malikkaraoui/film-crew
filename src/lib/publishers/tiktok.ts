@@ -23,6 +23,7 @@ import { logger } from '@/lib/logger'
 const ACCESS_TOKEN = process.env.TIKTOK_ACCESS_TOKEN || ''
 const CLIENT_KEY = process.env.TIKTOK_CLIENT_KEY || ''
 const CLIENT_SECRET = process.env.TIKTOK_CLIENT_SECRET || ''
+const PROFILE_HANDLE = (process.env.TIKTOK_PROFILE_HANDLE || '').replace(/^@/, '')
 const BASE_URL = 'https://open.tiktokapis.com/v2'
 const DEFAULT_OAUTH_SCOPES = (process.env.TIKTOK_OAUTH_SCOPES || 'user.info.basic,video.upload,video.publish')
   .split(',')
@@ -165,6 +166,7 @@ export type PublishResult = {
   publishId?: string
   videoId?: string
   shareUrl?: string
+  profileUrl?: string
   error?: string
   credentials: {
     hasAccessToken: boolean
@@ -177,6 +179,11 @@ export type PublishResult = {
   hashtags: string[]
   mediaMode: string
   mediaSizeBytes?: number
+}
+
+function getTikTokProfileUrl(): string | undefined {
+  if (!PROFILE_HANDLE) return undefined
+  return `https://www.tiktok.com/@${PROFILE_HANDLE}`
 }
 
 /**
@@ -380,6 +387,7 @@ export async function publishToTikTok(opts: {
           publishId,
           videoId,
           shareUrl: videoId ? `https://www.tiktok.com/@user/video/${videoId}` : undefined,
+          profileUrl: getTikTokProfileUrl(),
           credentials,
           publishedAt: new Date().toISOString(),
           runId: opts.runId,
@@ -417,6 +425,7 @@ export async function publishToTikTok(opts: {
     platform: 'tiktok',
     status: 'PROCESSING',
     publishId,
+    profileUrl: getTikTokProfileUrl(),
     credentials,
     runId: opts.runId,
     title: opts.title,
