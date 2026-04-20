@@ -215,7 +215,7 @@ describe('10A — Publication TikTok', () => {
         '',
         'Obtenir ces credentials :',
         '  1. Créer une app sur https://developers.tiktok.com',
-        '  2. Activer les scopes : user.info.basic, video.upload',
+        '  2. Activer les scopes : user.info.basic, video.upload, video.publish',
         '  3. Déployer l’app en HTTPS (ex: Vercel) puis ouvrir /tiktok/connect pour lancer le flow OAuth 2.0',
         '  4. Autoriser le compte TikTok et récupérer access_token + refresh_token',
       ].join('\n')
@@ -224,6 +224,7 @@ describe('10A — Publication TikTok', () => {
       expect(instructions).toContain('TIKTOK_CLIENT_SECRET')
       expect(instructions).toContain('developers.tiktok.com')
       expect(instructions).toContain('video.upload')
+      expect(instructions).toContain('video.publish')
       expect(instructions).toContain('user.info.basic')
       expect(instructions).toContain('OAuth')
       expect(instructions).toContain('/tiktok/connect')
@@ -259,6 +260,7 @@ describe('10A — Publication TikTok', () => {
       expect(url.searchParams.get('response_type')).toBe('code')
       expect(url.searchParams.get('redirect_uri')).toBe('https://film-crew-theta.vercel.app/tiktok/callback')
       expect(url.searchParams.get('state')).toBe('state123')
+      expect(url.searchParams.get('scope')).toContain('video.publish')
       expect(url.searchParams.get('scope')).toContain('video.upload')
       expect(url.searchParams.get('scope')).toContain('user.info.basic')
     })
