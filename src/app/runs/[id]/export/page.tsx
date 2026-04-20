@@ -29,6 +29,7 @@ type PublishResult = {
   publishId?: string
   videoId?: string
   shareUrl?: string
+  profileUrl?: string
   error?: string
   credentials?: { hasAccessToken: boolean; hasClientKey: boolean }
   instructions?: string
@@ -103,6 +104,18 @@ export default function ExportPage() {
   useEffect(() => {
     void Promise.all([loadExportData(), loadManifest(), loadPublishStatus()])
   }, [loadExportData, loadManifest, loadPublishStatus])
+
+  // Polling automatique si PROCESSING — arrêt sur état terminal, timeout 5min
+  useEffect(() => {
+    if (publishResult?.status !== 'PROCESSING') return
+    let elapsed = 0
+    const interval = setInterval(async () => {
+      elapsed += 5
+      await loadPublishStatus()
+      if (elapsed >= 300) clearInterval(interval)
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [publishResult?.status, loadPublishStatus])
 
   async function handleRegenerate() {
     setRegenerating(true)
@@ -212,6 +225,22 @@ export default function ExportPage() {
                   {publishResult.videoId && (
                     <p>Video ID : <code className="text-[10px]">{publishResult.videoId}</code></p>
                   )}
+                  {publishResult.shareUrl && (
+                    <p>
+                      Lien vidéo :{' '}
+                      <a href={publishResult.shareUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+                        ouvrir
+                      </a>
+                    </p>
+                  )}
+                  {!publishResult.shareUrl && publishResult.profileUrl && (
+                    <p>
+                      Profil TikTok :{' '}
+                      <a href={publishResult.profileUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+                        ouvrir le profil
+                      </a>
+                    </p>
+                  )}
                   {publishResult.publishedAt && (
                     <p className="text-[10px] text-green-600">{new Date(publishResult.publishedAt).toLocaleString()}</p>
                   )}
@@ -223,6 +252,14 @@ export default function ExportPage() {
                   <p className="font-medium">Publication en cours de traitement</p>
                   {publishResult.publishId && (
                     <p>Publish ID : <code className="text-[10px]">{publishResult.publishId}</code></p>
+                  )}
+                  {publishResult.profileUrl && (
+                    <p>
+                      Profil TikTok :{' '}
+                      <a href={publishResult.profileUrl} target="_blank" rel="noreferrer" className="underline underline-offset-2">
+                        ouvrir le profil
+                      </a>
+                    </p>
                   )}
                   <p className="text-[10px]">Vérifiable manuellement sur https://developers.tiktok.com</p>
                 </div>

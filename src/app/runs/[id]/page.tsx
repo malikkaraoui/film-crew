@@ -105,6 +105,9 @@ export default function RunPage() {
         <Link href={`/runs/${id}/export`} className="text-primary hover:underline">
           Exporter
         </Link>
+        <Link href={`/runs/${id}/outils`} className="text-primary hover:underline">
+          Outils
+        </Link>
       </div>
     </div>
   )
