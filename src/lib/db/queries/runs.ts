@@ -96,8 +96,22 @@ export async function getZombieRuns(thresholdMs = 5 * 60_000) {
     )
 }
 
-/** Marque un run comme failed avec un message d'erreur explicite (12C). */
+/**
+ * Marque un run comme failed et persiste le message d'erreur sur le runStep courant (12C).
+ * Le message est lisible via GET /api/runs/{id}/progress → steps[].error
+ */
 export async function markRunFailed(id: string, error: string) {
+  // Récupérer currentStep du run pour savoir où persister l'erreur
+  const runRows = await db.select({ currentStep: run.currentStep }).from(run).where(eq(run.id, id))
+  const currentStep = runRows[0]?.currentStep ?? 1
+
+  // Persister le message d'erreur sur le runStep courant
+  await db
+    .update(runStep)
+    .set({ status: 'failed', error, completedAt: new Date() })
+    .where(and(eq(runStep.runId, id), eq(runStep.stepNumber, currentStep)))
+
+  // Marquer le run failed
   const [row] = await db
     .update(run)
     .set({ status: 'failed', updatedAt: new Date() })

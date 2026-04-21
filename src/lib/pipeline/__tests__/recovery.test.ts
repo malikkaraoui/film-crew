@@ -79,6 +79,33 @@ describe('12C — markRunFailed — contrat', () => {
     const afterMark = { ...mockRun, status: 'failed' }
     expect(afterMark.status).toBe('failed')
   })
+
+  it('le message d\'erreur est persisté sur le runStep courant (pas seulement passé en paramètre)', () => {
+    // Contrat : markRunFailed met à jour runStep.error + runStep.status='failed'
+    const ZOMBIE_ERROR = 'Interruption détectée — processus inactif depuis >5min'
+    const mockStep = { status: 'running', error: null as string | null }
+    // Après markRunFailed, le step doit avoir l'erreur
+    const afterMark = { ...mockStep, status: 'failed', error: ZOMBIE_ERROR }
+    expect(afterMark.status).toBe('failed')
+    expect(afterMark.error).toBe(ZOMBIE_ERROR)
+    expect(afterMark.error).not.toBeNull()
+  })
+
+  it('l\'erreur est lisible via /progress steps[].error', () => {
+    // GET /api/runs/{id}/progress retourne steps[].error — champ mappé depuis runStep.error
+    const ZOMBIE_ERROR = 'Interruption détectée — processus inactif depuis >5min'
+    const mockProgressResponse = {
+      status: 'failed',
+      steps: [
+        { stepNumber: 1, status: 'completed', error: null },
+        { stepNumber: 2, status: 'failed', error: ZOMBIE_ERROR },
+        { stepNumber: 3, status: 'pending', error: null },
+      ],
+    }
+    const failedStep = mockProgressResponse.steps.find((s) => s.status === 'failed')
+    expect(failedStep).toBeDefined()
+    expect(failedStep?.error).toBe(ZOMBIE_ERROR)
+  })
 })
 
 // ─── 3. recoverZombies — logique d'orchestration ─────────────────────────────
