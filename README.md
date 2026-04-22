@@ -12,7 +12,7 @@ Turn a raw idea into a branded short-form content pipeline — with local-first 
 [![React](https://img.shields.io/badge/React-19-149eca?style=for-the-badge&logo=react&logoColor=white)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Malik_Karaoui-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/your-linkedin/)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Malik_Karaoui-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/malik-karaoui/)
 
 </div>
 
@@ -257,7 +257,6 @@ Distribué sous licence **MIT**. Voir [`LICENSE`](./LICENSE).
 
 **Malik Karaoui**
 
-- LinkedIn : `à personnaliser dans le badge README`
 
 ---
 
