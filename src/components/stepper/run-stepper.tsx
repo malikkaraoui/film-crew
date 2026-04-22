@@ -6,6 +6,7 @@ const STEP_LABELS = [
   'Idée',
   'Brainstorm',
   'JSON',
+  'Blueprint',
   'Storyboard',
   'Prompts',
   'Génération',

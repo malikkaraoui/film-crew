@@ -101,7 +101,7 @@ export async function POST(
     const result = {
       platform: body.platform as 'tiktok' | 'youtube_shorts',
       status: 'NO_MEDIA' as const,
-      error: 'preview-manifest.json introuvable — le pipeline doit atteindre le step 7 avant publication',
+      error: 'preview-manifest.json introuvable — le pipeline doit atteindre le step 8 (Preview) avant publication',
       credentials: {
         hasAccessToken: false,
         hasClientKey: false,

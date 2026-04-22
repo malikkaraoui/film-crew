@@ -412,7 +412,7 @@ export default function PreviewPage() {
       {!hasPlayable && (
         <div className="rounded-md border p-3 text-sm">
           {hasClips ? (
-            <p className="text-amber-700">{completedClips.length} clip(s) présent(s) — assemblage non encore exécuté (step 7 non atteint).</p>
+            <p className="text-amber-700">{completedClips.length} clip(s) présent(s) — assemblage non encore exécuté (step 8 Preview non atteint).</p>
           ) : placeholderStoryboardImages.length > 0 ? (
             <p className="text-amber-700">Des placeholders locaux ont été produits à la place de vraies images storyboard. Ce storyboard est fake tant qu’une régénération réelle n’a pas réussi.</p>
           ) : hasStoryboard ? (

@@ -202,7 +202,7 @@ export function PublishPanel({ runId, context, hasPlayable, onPublish, publishin
                 {/* Pas de média : honnête */}
                 {hasPublisher && !hasPlayable && (
                   <p className="text-xs text-muted-foreground">
-                    Aucun fichier vidéo disponible — le pipeline doit atteindre le step 7.
+                    Aucun fichier vidéo disponible — le pipeline doit atteindre le step 8 (Preview).
                   </p>
                 )}
               </div>
