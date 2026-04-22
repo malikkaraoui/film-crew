@@ -14,6 +14,9 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 const BASE = 'http://localhost:3000'
+const POLL_MS = 5000
+const WAIT_FOR_BLUEPRINT_STORYBOARD_TIMEOUT_MS = 20 * 60_000
+const RUN_STALL_TIMEOUT_MS = 5 * 60_000
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 async function fetchJson(url, options) {
@@ -81,26 +84,50 @@ async function main() {
 
   section('2. Attente des artefacts blueprint + storyboard')
   const start = Date.now()
-  const timeoutMs = 8 * 60_000
   let lastSnapshot = ''
   let progress = null
+  let runData = null
   let deliverable4 = null
   let deliverable5 = null
   let deliverable6 = null
+  let lastHeartbeat = null
+  let lastTraceCount = -1
+  let lastLifeAt = Date.now()
 
-  while (Date.now() - start < timeoutMs) {
+  while (Date.now() - start < WAIT_FOR_BLUEPRINT_STORYBOARD_TIMEOUT_MS) {
     const progressResp = await fetchJson(`${BASE}/api/runs/${runId}/progress`)
     if (!progressResp.res.ok) {
       throw new Error(`GET /api/runs/${runId}/progress HTTP ${progressResp.res.status}`)
     }
     progress = progressResp.json?.data ?? null
+
+    const runResp = await fetchJson(`${BASE}/api/runs/${runId}`)
+    if (!runResp.res.ok) {
+      throw new Error(`GET /api/runs/${runId} HTTP ${runResp.res.status}`)
+    }
+    runData = runResp.json?.data ?? null
+
+    const tracesResp = await fetchJson(`${BASE}/api/runs/${runId}/traces`)
+    if (!tracesResp.res.ok) {
+      throw new Error(`GET /api/runs/${runId}/traces HTTP ${tracesResp.res.status}`)
+    }
+    const traceCount = Array.isArray(tracesResp.json?.data) ? tracesResp.json.data.length : 0
+
     const current = progress?.currentStep ?? '?'
-    const status = progress?.status ?? 'unknown'
+    const status = runData?.status ?? progress?.status ?? 'unknown'
     const pct = progress?.progressPct ?? '?'
-    const snapshot = `${status}|${current}|${pct}`
+    const heartbeat = runData?.lastHeartbeat ?? null
+
+    if (heartbeat !== lastHeartbeat || traceCount !== lastTraceCount) {
+      lastLifeAt = Date.now()
+      lastHeartbeat = heartbeat
+      lastTraceCount = traceCount
+    }
+
+    const snapshot = `${status}|${current}|${pct}|traces=${traceCount}`
 
     if (snapshot !== lastSnapshot) {
-      console.log(`  · status=${status} step=${current}/9 progress=${pct}%`)
+      console.log(`  · status=${status} step=${current}/9 progress=${pct}% traces=${traceCount}`)
       lastSnapshot = snapshot
     }
 
@@ -123,11 +150,19 @@ async function main() {
       throw new Error(`Run termine trop tot avec status=${status} avant la preuve blueprint/storyboard`)
     }
 
-    await wait(5000)
+    if (Date.now() - lastLifeAt > RUN_STALL_TIMEOUT_MS) {
+      throw new Error(
+        `Run vivant mais sans signe de vie exploitable depuis > ${Math.round(RUN_STALL_TIMEOUT_MS / 60000)} min (step=${current}, traces=${traceCount}, heartbeat=${heartbeat ?? 'absent'})`,
+      )
+    }
+
+    await wait(POLL_MS)
   }
 
   if (!deliverable4?.available || !deliverable5?.available) {
-    throw new Error('Timeout : blueprint/storyboard non disponibles dans le delai imparti')
+    throw new Error(
+      `Timeout : blueprint/storyboard non disponibles dans le delai imparti (${Math.round(WAIT_FOR_BLUEPRINT_STORYBOARD_TIMEOUT_MS / 60000)} min) alors que le run est ${runData?.status ?? progress?.status ?? 'unknown'} en step ${runData?.currentStep ?? progress?.currentStep ?? '?'}`,
+    )
   }
 
   section('3. Verification des artefacts sur disque')
