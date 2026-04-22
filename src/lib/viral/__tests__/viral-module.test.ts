@@ -3,7 +3,9 @@ import { rmSync, mkdirSync } from 'fs'
 import { writeFile, readFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
-import type { ViralSegment, ViralManifest, CreateRunFromSegmentResult } from '@/lib/viral/viral-types'
+import type { ViralSegment, ViralManifest, CreateRunFromSegmentResult, ViralSessionStatus } from '@/lib/viral/viral-types'
+import { parseViralSegmentsFromLlm } from '@/lib/viral/segment-parser'
+import { buildYouTubeSourceContext, parseVttToTranscript, selectPreferredSubtitleLanguage } from '@/lib/viral/source-context'
 
 /**
  * 11C — Module viral réel
@@ -17,6 +19,9 @@ import type { ViralSegment, ViralManifest, CreateRunFromSegmentResult } from '@/
  * 6. GET /api/viral/{id} — structure réponse 404/200
  * 7. viral-source.json — traçabilité source → run
  * 8. CreateRunFromSegmentResult — structure
+ * 9. ViralSessionStatus — suivi précis en français/local-externe
+ * 10. Parsing robuste des segments LLM
+ * 11. Contexte source YouTube (sous-titres / métadonnées)
  */
 
 const FIXTURE_DIR = join(tmpdir(), `vitest-11c-${process.pid}`)
@@ -234,11 +239,52 @@ describe('11C — Module viral réel', () => {
           segments: [
             { index: 0, start_s: 0, end_s: 45, title: 'A', reason: 'rA' },
           ] as ViralSegment[],
+          status: {
+            id: 'abc',
+            url: 'https://youtube.com/watch?v=abc',
+            state: 'completed',
+            currentStep: 'completed',
+            message: '2 segments générés — analyse terminée',
+            logs: [],
+            startedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            providerUsed: 'ollama',
+            providerMode: 'local',
+          } as ViralSessionStatus,
         },
       }
       expect(found.data.manifest.version).toBe(1)
       expect(Array.isArray(found.data.segments)).toBe(true)
       expect(found.data.segments.length).toBe(1)
+      expect(found.data.status.providerMode).toBe('local')
+    })
+
+    it('200 en cours : data.status + meta.ready false', () => {
+      const pending = {
+        data: {
+          status: {
+            id: 'pending-1',
+            url: 'https://youtube.com/watch?v=pending',
+            state: 'running',
+            currentStep: 'downloading',
+            message: 'Téléchargement de la vidéo YouTube en cours via yt-dlp sur cette machine',
+            logs: [
+              {
+                at: new Date().toISOString(),
+                step: 'downloading',
+                scope: 'local',
+                message: 'Téléchargement en cours',
+              },
+            ],
+            startedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as ViralSessionStatus,
+        },
+        meta: { ready: false },
+      }
+
+      expect(pending.meta.ready).toBe(false)
+      expect(pending.data.status.currentStep).toBe('downloading')
     })
   })
 
@@ -298,6 +344,102 @@ describe('11C — Module viral réel', () => {
         chainId: 'chain-1', createdAt: new Date().toISOString(),
       }
       expect(result.idea).toContain('Révélation choc')
+    })
+  })
+
+  // ─── 9. ViralSessionStatus — traçabilité d'exécution ───────────────────
+
+  describe('ViralSessionStatus — suivi précis', () => {
+    it('explicite local vs externe', () => {
+      const status: ViralSessionStatus = {
+        id: 'v-status',
+        url: 'https://youtube.com/watch?v=abc',
+        state: 'completed',
+        currentStep: 'completed',
+        message: 'Analyse terminée',
+        logs: [
+          {
+            at: new Date().toISOString(),
+            step: 'analyzing',
+            scope: 'local',
+            message: 'Analyse effectuée en local via ollama',
+          },
+        ],
+        startedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        providerUsed: 'ollama',
+        providerMode: 'local',
+      }
+
+      expect(status.providerUsed).toBe('ollama')
+      expect(status.providerMode).toBe('local')
+      expect(status.logs[0].scope).toBe('local')
+    })
+  })
+
+  // ─── 10. Parsing robuste des segments LLM ──────────────────────────────
+
+  describe('Parsing robuste des segments LLM', () => {
+    it('accepte start_s/end_s au format mm:ss', () => {
+      const raw = `{
+        "segments": [
+          {
+            "index": 2,
+            "start_s": 1:30,
+            "end_s": 3:00,
+            "title": "La chanson improbable",
+            "reason": "La musique est amusante",
+            "excerpt": "Extrait test"
+          }
+        ]
+      }`
+
+      const parsed = parseViralSegmentsFromLlm(raw)
+
+      expect(parsed.parseError).toBeUndefined()
+      expect(parsed.segments).toHaveLength(1)
+      expect(parsed.segments[0].start_s).toBe(90)
+      expect(parsed.segments[0].end_s).toBe(180)
+    })
+  })
+
+  // ─── 11. Contexte source YouTube ───────────────────────────────────────
+
+  describe('Contexte source YouTube', () => {
+    it('parse un VTT en transcript lisible', () => {
+      const vtt = `WEBVTT
+
+00:00:00.000 --> 00:00:02.000
+Bienvenue dans Turbo aujourd'hui
+
+00:00:02.000 --> 00:00:04.000
+on essaie une nouvelle sportive`
+
+      const transcript = parseVttToTranscript(vtt)
+
+      expect(transcript).toContain('Bienvenue dans Turbo aujourd\'hui')
+      expect(transcript).toContain('on essaie une nouvelle sportive')
+    })
+
+    it('préfère fr puis en pour les sous-titres', () => {
+      const lang = selectPreferredSubtitleLanguage({
+        automatic_captions: { en: [{}], fr: [{}] },
+      })
+
+      expect(lang).toBe('fr')
+    })
+
+    it('bascule sur metadata-only sans transcript', () => {
+      const context = buildYouTubeSourceContext({
+        info: {
+          title: 'Emission auto',
+          description: 'Essai d\'une berline sportive',
+          channel: 'Turbo',
+        },
+      })
+
+      expect(context.transcriptSource).toBe('metadata-only')
+      expect(context.transcript).toContain('Titre: Emission auto')
     })
   })
 })

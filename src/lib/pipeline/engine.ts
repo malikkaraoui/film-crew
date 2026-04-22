@@ -14,6 +14,7 @@ import { step1Idea } from './steps/step-1-idea'
 import { step2Brainstorm } from './steps/step-2-brainstorm'
 import { step3Json } from './steps/step-3-json'
 import { step4Storyboard } from './steps/step-4-storyboard'
+import { step4bSketch } from './steps/step-4b-sketch'
 import { step5Prompts } from './steps/step-5-prompts'
 import { step6Generation } from './steps/step-6-generation'
 import { step7Preview } from './steps/step-7-preview'
@@ -24,6 +25,7 @@ const STEPS: PipelineStep[] = [
   step2Brainstorm,
   step3Json,
   step4Storyboard,
+  step4bSketch,
   step5Prompts,
   step6Generation,
   step7Preview,

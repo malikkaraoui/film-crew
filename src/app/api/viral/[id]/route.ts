@@ -4,6 +4,7 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import { logger } from '@/lib/logger'
 import type { ViralManifest, ViralSegment } from '@/lib/viral/viral-types'
+import { readViralStatus } from '@/lib/viral/status'
 
 /**
  * GET /api/viral/[id]
@@ -18,12 +19,18 @@ export async function GET(
   const { id } = await params
   const viralDir = join(process.cwd(), 'storage', 'viral', id)
   const manifestPath = join(viralDir, 'viral-manifest.json')
+  const status = await readViralStatus(id)
 
-  if (!existsSync(manifestPath)) {
+  if (!status && !existsSync(manifestPath)) {
     return NextResponse.json(
       { data: null, meta: { reason: 'Session virale introuvable ou non encore complète' } },
       { status: 404 },
     )
+  }
+
+  if (!existsSync(manifestPath)) {
+    logger.info({ event: 'viral_status_fetched', id, state: status?.state, step: status?.currentStep })
+    return NextResponse.json({ data: { status }, meta: { ready: false } })
   }
 
   const manifest = JSON.parse(await readFile(manifestPath, 'utf-8')) as ViralManifest
@@ -36,5 +43,5 @@ export async function GET(
   }
 
   logger.info({ event: 'viral_manifest_fetched', id })
-  return NextResponse.json({ data: { manifest, segments } })
+  return NextResponse.json({ data: { manifest, segments, status }, meta: { ready: true } })
 }

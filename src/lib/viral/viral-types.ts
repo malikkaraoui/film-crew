@@ -26,6 +26,44 @@ export type ViralManifest = {
   generatedAt: string
 }
 
+export type ViralExecutionScope = 'local' | 'external' | 'mixed'
+
+export type ViralSessionStep =
+  | 'queued'
+  | 'downloading'
+  | 'transcribing'
+  | 'analyzing'
+  | 'completed'
+  | 'error'
+
+export type ViralSessionLog = {
+  at: string
+  step: ViralSessionStep
+  scope: ViralExecutionScope
+  message: string
+  details?: string
+}
+
+export type ViralSessionStatus = {
+  id: string
+  url: string
+  state: 'queued' | 'running' | 'completed' | 'error'
+  currentStep: ViralSessionStep
+  message: string
+  logs: ViralSessionLog[]
+  startedAt: string
+  updatedAt: string
+  completedAt?: string
+  providerUsed?: string
+  providerMode?: ViralExecutionScope
+  failover?: {
+    original: string
+    fallback: string
+    reason: string
+  }
+  error?: string
+}
+
 /** Résultat de la création d'un run depuis un segment */
 export type CreateRunFromSegmentResult = {
   runId: string

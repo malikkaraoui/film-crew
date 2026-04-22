@@ -4,6 +4,7 @@ import { happyhorseProvider } from './video/happyhorse'
 import { klingProvider } from './video/kling'
 import { seedanceProvider } from './video/seedance'
 import { ltxProvider } from './video/ltx'
+import { sketchLocalProvider } from './video/sketch-local'
 import { fishAudioProvider } from './tts/fish-audio'
 import { kokoroProvider } from './tts/kokoro'
 import { piperProvider } from './tts/piper'
@@ -39,11 +40,12 @@ export function bootstrapProviders(): void {
   // LLM
   registry.register(ollamaProvider)
 
-  // Vidéo — ordre de priorité : HappyHorse → Kling → Seedance → LTX
+  // Vidéo — ordre de priorité : HappyHorse → Kling → Seedance → LTX → Sketch Local (fallback)
   registry.register(happyhorseProvider)
   registry.register(klingProvider)
   registry.register(seedanceProvider)
   registry.register(ltxProvider)
+  registry.register(sketchLocalProvider)
 
   // TTS — ordre configurable, désactivation par provider possible
   const priority = (process.env.TTS_PRIORITY || DEFAULT_TTS_PRIORITY)
