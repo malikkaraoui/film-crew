@@ -142,7 +142,7 @@ Il est pensé comme une **machine de production** pour quelqu'un qui veut publie
 
 ### Prérequis
 
-- Node.js
+- Node.js **20+**
 - Python **3.12+**
 - FFmpeg
 - PostgreSQL **17**
@@ -151,7 +151,8 @@ Il est pensé comme une **machine de production** pour quelqu'un qui veut publie
 
 ```bash
 cp .env.example .env.local
-./install.sh
+npm install
+npx drizzle-kit push        # initialise le schéma DB
 npm run dev
 ```
 
