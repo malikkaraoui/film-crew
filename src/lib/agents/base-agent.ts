@@ -5,6 +5,13 @@ import { executeWithFailover } from '@/lib/providers/failover'
 import { createProviderLog } from '@/lib/db/queries/logs'
 import { logger } from '@/lib/logger'
 
+export type AgentSpeakOptions = {
+  temperature?: number
+  maxTokens?: number
+  timeoutMs?: number
+  resetHistory?: boolean
+}
+
 export class BaseAgent {
   profile: AgentProfile
   private conversationHistory: LLMMessage[] = []
@@ -23,7 +30,12 @@ export class BaseAgent {
   async speak(
     context: string,
     runId: string,
+    opts: AgentSpeakOptions = {},
   ): Promise<AgentMessage> {
+    if (opts.resetHistory) {
+      this.resetConversation()
+    }
+
     this.conversationHistory.push({ role: 'user', content: context })
 
     const start = Date.now()
@@ -33,8 +45,9 @@ export class BaseAgent {
       async (p) => {
         const llm = p as LLMProvider
         return llm.chat(this.conversationHistory, {
-          temperature: 0.8,
-          maxTokens: 512,
+          temperature: opts.temperature ?? 0.8,
+          maxTokens: opts.maxTokens ?? 512,
+          timeoutMs: opts.timeoutMs,
         })
       },
       runId,
@@ -88,6 +101,7 @@ export class BaseAgent {
   async writeBriefSection(
     meetingTranscript: string,
     runId: string,
+    opts: Pick<AgentSpeakOptions, 'timeoutMs'> = {},
   ): Promise<AgentMessage> {
     // Réinitialiser l'historique pour rester dans la fenêtre de contexte.
     // Le transcript complet est passé directement dans le prompt.
@@ -95,7 +109,10 @@ export class BaseAgent {
 
     const prompt = `Voici le transcript de la réunion de production :\n\n${meetingTranscript}\n\nÉcris ta section du brief. Tu es responsable de : ${this.profile.briefSection}.\n\nRédige un texte structuré et concis (10-20 lignes), directement utilisable pour la suite du pipeline.`
 
-    const message = await this.speak(prompt, runId)
+    const message = await this.speak(prompt, runId, {
+      resetHistory: true,
+      timeoutMs: opts.timeoutMs,
+    })
     message.messageType = 'brief_section'
     return message
   }

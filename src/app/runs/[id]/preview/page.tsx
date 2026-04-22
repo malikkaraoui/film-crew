@@ -418,7 +418,7 @@ export default function PreviewPage() {
           ) : hasStoryboard ? (
             <p className="text-amber-700">Storyboard disponible. Pas de clips vidéo (providers non configurés). Aucun animatic assemblé.</p>
           ) : (
-            <p className="text-muted-foreground">Aucun artefact visuel disponible. Le pipeline doit atteindre au moins le step 4 (Storyboard).</p>
+            <p className="text-muted-foreground">Aucun artefact visuel disponible. Le pipeline doit atteindre au moins le step 5 (Storyboard).</p>
           )}
         </div>
       )}

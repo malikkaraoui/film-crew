@@ -1,6 +1,7 @@
 import type { LLMProvider, LLMMessage, LLMOpts, LLMResult, ProviderHealth } from '../types'
 
 const DEFAULT_OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434'
+const DEFAULT_OLLAMA_CHAT_TIMEOUT_MS = 180_000
 
 const runtimeState = {
   activeRequests: 0,
@@ -53,7 +54,7 @@ export const ollamaProvider: LLMProvider = {
   async chat(messages: LLMMessage[], opts: LLMOpts = {}): Promise<LLMResult> {
     const model = opts.model || process.env.OLLAMA_MODEL || 'mistral:latest'
     const host = opts.host || DEFAULT_OLLAMA_URL
-    const timeoutMs = opts.timeoutMs ?? 60000
+    const timeoutMs = opts.timeoutMs ?? DEFAULT_OLLAMA_CHAT_TIMEOUT_MS
     const start = Date.now()
 
     runtimeState.activeRequests += 1

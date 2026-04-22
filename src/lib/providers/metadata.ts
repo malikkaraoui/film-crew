@@ -178,7 +178,7 @@ export const SERVICES_METADATA: Record<string, ServiceMetadata> = {
     status: 'active',
     dashboardUrl: 'http://localhost:3000/settings',
     description: 'Cartes storyboard PNG generees en local avec texte descriptif',
-    notes: 'Livrable simple pour etape 4, sans pretention photorealiste',
+    notes: 'Livrable simple de secours pour le storyboard, sans pretention photorealiste',
   },
 
   // === DISTRIBUTION (OAuth gratuit) ===

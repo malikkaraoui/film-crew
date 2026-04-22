@@ -8,7 +8,7 @@ import type { ImageProvider, ImageOpts, ImageResult, ProviderHealth } from '../t
 /**
  * Provider image local — toujours disponible, aucune clé API requise.
  * Génère une carte storyboard PNG locale avec texte, lisible et exploitable
- * comme livrable simple pour l'étape 4.
+ * comme livrable simple pour le storyboard quand les providers image réels échouent.
  */
 
 const FONT_CANDIDATES = [
@@ -81,7 +81,7 @@ export const localPlaceholderProvider: ImageProvider = {
       `drawbox=x=${pageX}:y=${pageY}:w=${pageWidth}:h=${pageHeight}:color=0x1c1c1c@1:t=2`,
       `drawbox=x=${pageX}:y=${pageY}:w=${pageWidth}:h=88:color=0x171717@1:t=fill`,
       `drawtext=${fontClause}text='STORYBOARD':fontcolor=0xffffff:fontsize=34:x=${pageX + 28}:y=${pageY + 24}`,
-      `drawtext=${fontClause}text='LOCAL STEP 4 PREVIEW':fontcolor=0xded6ca:fontsize=18:x=${pageX + 30}:y=${pageY + 60}`,
+      `drawtext=${fontClause}text='LOCAL STORYBOARD PLACEHOLDER':fontcolor=0xded6ca:fontsize=18:x=${pageX + 30}:y=${pageY + 60}`,
       `drawbox=x=${mainPanelX}:y=${mainPanelY}:w=${mainPanelWidth}:h=${mainPanelHeight}:color=0xffffff@1:t=fill`,
       `drawbox=x=${mainPanelX}:y=${mainPanelY}:w=${mainPanelWidth}:h=${mainPanelHeight}:color=0x202020@1:t=2`,
       `drawtext=${fontClause}text='SCENE':fontcolor=0x6b6458:fontsize=18:x=${mainPanelX + 24}:y=${mainPanelY + 28}`,

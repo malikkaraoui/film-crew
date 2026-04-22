@@ -64,7 +64,7 @@ export function bootstrapProviders(): void {
     }
   }
 
-  // Image (storyboard) — rough local en priorité pour l'étape 4, puis cloud si besoin, placeholder en dernier recours
+  // Image (storyboard) — rough local en priorité pour le step Storyboard, puis cloud si besoin, placeholder en dernier recours
   registry.register(storyboardLocalProvider)
   registry.register(falImageProvider)
   registry.register(stabilityProvider)

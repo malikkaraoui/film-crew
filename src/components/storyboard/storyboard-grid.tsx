@@ -68,7 +68,7 @@ export function StoryboardGrid({ runId, images, boardFilePath, boardLayout, asse
   if (images.length === 0) {
     return (
       <p className="text-sm text-muted-foreground py-8 text-center">
-        Aucune image de storyboard. Lancez l&apos;étape 4 pour les générer.
+        Aucune image de storyboard. Lancez l&apos;étape 5 (Storyboard) pour les générer.
       </p>
     )
   }
