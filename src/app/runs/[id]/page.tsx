@@ -201,6 +201,8 @@ function getFocalStep(run: RunWithSteps): number {
 
   if (run.status === 'completed') return highestCompleted ?? run.currentStep ?? 1
 
+  if (run.status === 'pending' && highestCompleted) return highestCompleted
+
   if (run.currentStep && run.currentStep > 0) return run.currentStep
 
   return highestCompleted ?? 1
@@ -220,6 +222,26 @@ function getStepLlmConfig(config: ProjectConfig | null | undefined, stepNumber: 
   }
 
   return null
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : []
+}
+
+function readText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function shortText(value: unknown, max = 220): string {
+  const text = readText(value)
+  if (!text) return '—'
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
 export default function RunPage() {
@@ -503,6 +525,10 @@ export default function RunPage() {
     () => parseDeliverableContent(deliverable?.content),
     [deliverable?.content],
   )
+  const deliverableScenes = useMemo(() => asArray(parsedDeliverable?.scenes), [parsedDeliverable])
+  const deliverableSections = useMemo(() => asArray(parsedDeliverable?.sections), [parsedDeliverable])
+  const deliverablePrompts = useMemo(() => asArray(parsedDeliverable?.prompts), [parsedDeliverable])
+  const deliverableClips = useMemo(() => asArray(parsedDeliverable?.clips), [parsedDeliverable])
 
   const selectedStepLlmConfig = getStepLlmConfig(run?.projectConfig, selectedStep)
 
@@ -888,9 +914,9 @@ export default function RunPage() {
             <CardHeader>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <CardTitle>Inspecter le livrable</CardTitle>
+                  <CardTitle>{deliverable?.title ?? 'Livrable'}</CardTitle>
                   <CardDescription>
-                    Une seule entrée utile pour l’étape choisie, puis les détails avancés si tu veux creuser.
+                    {deliverable?.expected ?? STEP_EXPECTATIONS[selectedStep]?.expected}
                   </CardDescription>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -914,103 +940,150 @@ export default function RunPage() {
                 </div>
               )}
 
-              <details className="rounded-lg border p-4">
-                <summary className="cursor-pointer list-none text-sm font-semibold">
-                  Source brute / édition avancée
-                </summary>
-                <div className="mt-4 space-y-3">
-                  <div className="rounded-md border bg-muted/20 p-3 text-sm">
-                    {deliverable?.summary ?? 'Aucun livrable disponible pour cette étape.'}
-                  </div>
-
-                  {deliverable?.editable ? (
-                    <div className="space-y-3">
-                      <div className="space-y-1 text-xs text-muted-foreground">
-                        <div>
-                          {selectedStatus === 'running'
-                            ? `Cette étape est en cours. Si le contenu est encore vide, c’est normal : ${getStepActionLabel(selectedStep)} remplit ce livrable automatiquement.`
-                            : 'Édition clavier active pour les utilisateurs avancés.'}
-                        </div>
-                        <div>
-                          Raccourci : <span className="font-mono">⌘/Ctrl + S</span> pour sauvegarder.
-                        </div>
-                      </div>
-                      <textarea
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
-                            e.preventDefault()
-                            void saveDeliverable()
-                          }
-                        }}
-                        placeholder={selectedStatus === 'running'
-                          ? `Étape en cours : ${getStepActionLabel(selectedStep)}. Le contenu apparaîtra ici dès que le système aura fini.`
-                          : `Contenu éditable de l’étape ${selectedStep}.`}
-                        className="min-h-96 w-full rounded-md border bg-background p-3 font-mono text-xs"
-                      />
-                      <div className="flex justify-end">
-                        <Button onClick={saveDeliverable} disabled={savingDeliverable}>
-                          {savingDeliverable ? 'Sauvegarde...' : 'Sauvegarder'}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <pre className="max-h-108 overflow-auto rounded-md border bg-background p-3 text-xs whitespace-pre-wrap wrap-break-word">
-                      {deliverablePreview || 'Aucun contenu texte à afficher ici. Utilise la vue dédiée pour consulter le livrable.'}
-                    </pre>
-                  )}
+              {loadingDeliverable ? (
+                <div className="rounded-lg border bg-muted/20 px-4 py-10 text-sm text-muted-foreground">
+                  Chargement du livrable...
                 </div>
-              </details>
-
-              <details className="rounded-lg border p-4">
-                <summary className="cursor-pointer list-none text-sm font-semibold">
-                  Détails techniques
-                </summary>
-                <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                  <div className="space-y-3">
-                    <div className="text-sm font-medium">Étape sélectionnée</div>
-                    <div className="space-y-2 text-sm">
-                      <div className="rounded-md border px-3 py-2">
-                        <div className="text-xs uppercase tracking-wide text-muted-foreground">Provider</div>
-                        <div className="mt-1">{selectedRunStep?.providerUsed ?? '—'}</div>
-                      </div>
-                      <div className="rounded-md border px-3 py-2">
-                        <div className="text-xs uppercase tracking-wide text-muted-foreground">Durée</div>
-                        <div className="mt-1">{formatStepDuration(selectedRunStep)}</div>
-                      </div>
-                      <div className="rounded-md border px-3 py-2">
-                        <div className="text-xs uppercase tracking-wide text-muted-foreground">Erreur</div>
-                        <div className="mt-1 wrap-break-word">{selectedRunStep?.error ?? 'Aucune'}</div>
-                      </div>
+              ) : !deliverable?.available || !parsedDeliverable ? (
+                <div className="rounded-lg border bg-muted/20 px-4 py-10 text-sm text-muted-foreground">
+                  {deliverable?.summary || 'Livrable non disponible pour le moment.'}
+                </div>
+              ) : selectedStep === 2 ? (
+                <div className="space-y-4">
+                  <div className="rounded-lg border p-4">
+                    <div className="text-sm font-semibold">Résumé</div>
+                    <div className="mt-2 whitespace-pre-wrap text-sm text-foreground/90">
+                      {readText(parsedDeliverable.summary) || 'Aucun résumé visible.'}
                     </div>
                   </div>
 
-                  <div className="space-y-3">
-                    <div className="text-sm font-medium">Logs failover / providers</div>
-                    {failoverLog.length === 0 ? (
-                      <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
-                        Aucun log technique remonté pour ce projet.
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {failoverLog.slice(0, 8).map((entry, index) => {
-                          const summary = summarizeTechnicalLog(entry)
-                          return (
-                            <div key={`${summary.title}-${index}`} className="rounded-md border px-3 py-2 text-sm">
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="font-medium">{summary.title}</div>
-                                <div className="text-xs text-muted-foreground">{formatRelativeTime(entry.timestamp ?? null)}</div>
-                              </div>
-                              <div className="mt-1 text-muted-foreground">{summary.detail}</div>
-                            </div>
-                          )
-                        })}
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {deliverableSections.length > 0 ? deliverableSections.map((section, index) => {
+                      const record = asRecord(section)
+                      return (
+                        <div key={`section-${index}`} className="rounded-lg border p-4">
+                          <div className="text-sm font-semibold">
+                            {readText(record?.title) || readText(record?.agent) || `Section ${index + 1}`}
+                          </div>
+                          <div className="mt-2 whitespace-pre-wrap text-sm text-foreground/90">
+                            {readText(record?.content) || 'Section vide.'}
+                          </div>
+                        </div>
+                      )
+                    }) : (
+                      <div className="rounded-lg border px-4 py-8 text-sm text-muted-foreground lg:col-span-2">
+                        Aucune section de brief visible.
                       </div>
                     )}
                   </div>
                 </div>
-              </details>
+              ) : selectedStep === 3 ? (
+                <div className="space-y-4">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-lg border p-4">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Titre</div>
+                      <div className="mt-1 text-sm font-medium">{shortText(parsedDeliverable.title, 120)}</div>
+                    </div>
+                    <div className="rounded-lg border p-4">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Hook</div>
+                      <div className="mt-1 text-sm font-medium">{shortText(parsedDeliverable.hook, 120)}</div>
+                    </div>
+                    <div className="rounded-lg border p-4">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Durée cible</div>
+                      <div className="mt-1 text-sm font-medium">{readText(parsedDeliverable.target_duration_s) || '—'}</div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {deliverableScenes.length > 0 ? deliverableScenes.map((scene, index) => {
+                      const record = asRecord(scene)
+                      return (
+                        <div key={`scene-${index}`} className="rounded-lg border p-4">
+                          <div className="text-sm font-semibold">Scène {index + 1} — {readText(record?.title) || 'Sans titre'}</div>
+                          <div className="mt-2 whitespace-pre-wrap text-sm text-foreground/90">
+                            {readText(record?.description) || readText(record?.summary) || 'Aucune description visible.'}
+                          </div>
+                        </div>
+                      )
+                    }) : (
+                      <div className="rounded-lg border px-4 py-8 text-sm text-muted-foreground">
+                        Aucune scène visible dans la structure.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : selectedStep === 4 ? (
+                <div className="space-y-3">
+                  {deliverableScenes.length > 0 ? deliverableScenes.map((scene, index) => {
+                    const record = asRecord(scene)
+                    return (
+                      <div key={`blueprint-${index}`} className="rounded-lg border p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold">Plan {index + 1} — {readText(record?.title) || 'Sans titre'}</div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              {readText(record?.camera) || 'Caméra non renseignée'}
+                              {readText(record?.lighting) ? ` · ${readText(record?.lighting)}` : ''}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-3 whitespace-pre-wrap text-sm text-foreground/90">
+                          {readText(record?.description) || 'Aucune description visible.'}
+                        </div>
+                        {(readText(record?.childCaption) || readText(record?.dialogue)) && (
+                          <div className="mt-3 rounded-md bg-muted/30 px-3 py-2 text-sm">
+                            {readText(record?.childCaption) || readText(record?.dialogue)}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  }) : (
+                    <div className="rounded-lg border px-4 py-8 text-sm text-muted-foreground">
+                      Aucun panneau blueprint visible.
+                    </div>
+                  )}
+                </div>
+              ) : selectedStep === 6 ? (
+                <div className="space-y-3">
+                  {deliverablePrompts.length > 0 ? deliverablePrompts.map((prompt, index) => {
+                    const record = asRecord(prompt)
+                    return (
+                      <div key={`prompt-${index}`} className="rounded-lg border p-4">
+                        <div className="text-sm font-semibold">Prompt {index + 1}</div>
+                        <div className="mt-2 whitespace-pre-wrap text-sm text-foreground/90">
+                          {readText(record?.prompt) || 'Aucun prompt visible.'}
+                        </div>
+                      </div>
+                    )
+                  }) : (
+                    <pre className="max-h-108 overflow-auto rounded-lg border bg-background p-4 text-xs whitespace-pre-wrap wrap-break-word">
+                      {deliverablePreview}
+                    </pre>
+                  )}
+                </div>
+              ) : selectedStep === 7 ? (
+                <div className="space-y-3">
+                  {deliverableClips.length > 0 ? deliverableClips.map((clip, index) => {
+                    const record = asRecord(clip)
+                    return (
+                      <div key={`clip-${index}`} className="rounded-lg border p-4">
+                        <div className="text-sm font-semibold">Clip {index + 1}</div>
+                        <div className="mt-2 text-sm text-foreground/90">
+                          {shortText(record?.prompt || record?.filePath || record?.status, 240)}
+                        </div>
+                      </div>
+                    )
+                  }) : (
+                    <pre className="max-h-108 overflow-auto rounded-lg border bg-background p-4 text-xs whitespace-pre-wrap wrap-break-word">
+                      {deliverablePreview}
+                    </pre>
+                  )}
+                </div>
+              ) : (
+                <pre className="max-h-108 overflow-auto rounded-lg border bg-background p-4 text-xs whitespace-pre-wrap wrap-break-word">
+                  {deliverablePreview}
+                </pre>
+              )}
             </CardContent>
           </Card>
         </div>
