@@ -51,7 +51,7 @@ function getConfig(runId: string, stepNumber: number): DeliverableConfig | null 
       title: 'Prompts vidéo',
       expected: 'Prompts scène par scène + négatifs',
       filePath: join(base, 'prompt-manifest.json'),
-      pageHref: `/runs/${runId}/preview`,
+      pageHref: `/runs/${runId}/prompts`,
       editable: true,
     },
     7: {
