@@ -551,7 +551,9 @@ export default function RunPage() {
   })
   const isStep2Focus = selectedStep === 2 && currentStep === 2
   const hasMeeting = traces.length > 0
+  const meetingCompleted = selectedRunStep?.status === 'completed'
   const isMeetingRunning = isStep2Focus && run.status === 'running'
+  const isMeetingInterrupted = isStep2Focus && hasMeeting && !isMeetingRunning && !meetingCompleted
   const showMeetingPanel = isStep2Focus && (isMeetingRunning || hasMeeting)
   const topPanelTone = run.status === 'failed'
     ? 'red'
@@ -827,12 +829,14 @@ export default function RunPage() {
                     <CardDescription>
                       {isMeetingRunning
                         ? 'La réunion tourne. Ouvre le studio pour la suivre.'
-                        : 'La réunion existe déjà. Tu peux la revoir, l’exporter ou la supprimer.'}
+                        : isMeetingInterrupted
+                          ? 'La réunion a été interrompue avant sa fin. Pas de validation possible tant qu’elle n’est pas complétée.'
+                          : 'La réunion est terminée. Tu peux la revoir, l’exporter ou la supprimer.'}
                     </CardDescription>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={isMeetingRunning ? 'secondary' : 'default'}>
-                      {isMeetingRunning ? 'en cours' : 'terminée'}
+                    <Badge variant={isMeetingRunning ? 'secondary' : isMeetingInterrupted ? 'destructive' : 'default'}>
+                      {isMeetingRunning ? 'en cours' : isMeetingInterrupted ? 'interrompue' : 'terminée'}
                     </Badge>
                     <Badge variant="outline">{traces.length} trace(s)</Badge>
                   </div>
@@ -842,10 +846,14 @@ export default function RunPage() {
                 <div className="flex flex-wrap gap-2">
                   <Link href={`/runs/${id}/studio`} className="inline-flex">
                     <Button className="justify-center">
-                      {isMeetingRunning ? 'Assister à la réunion' : 'Voir la réunion'}
+                      {isMeetingRunning
+                        ? 'Assister à la réunion'
+                        : isMeetingInterrupted
+                          ? 'Voir les traces de réunion'
+                          : 'Voir la réunion'}
                     </Button>
                   </Link>
-                  {!isMeetingRunning && (
+                  {meetingCompleted && !isMeetingRunning && (
                     <>
                       <Button
                         variant="outline"
