@@ -6,9 +6,21 @@ import Link from 'next/link'
 import { RunStepper } from '@/components/stepper/run-stepper'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import type { ProjectConfig, Run, RunStep } from '@/types/run'
 import { TOTAL_PIPELINE_STEPS } from '@/lib/pipeline/constants'
 import { getProjectStatusClass, getProjectStatusLabel, getRunStepLabel } from '@/lib/runs/presentation'
+import {
+  buildContextSections,
+  buildValidationChecks,
+  formatRelativeTime,
+  formatStepDuration,
+  parseDeliverableContent,
+  summarizeTechnicalLog,
+  type DashboardAgentTrace,
+  type DashboardCheckTone,
+  type DashboardFailoverEntry,
+} from '@/lib/runs/project-dashboard'
 
 type RunWithSteps = Run & { steps: RunStep[]; projectConfig?: ProjectConfig | null }
 
@@ -22,6 +34,15 @@ type Deliverable = {
   available: boolean
   content: string | null
   summary: string
+}
+
+type PrimaryAction = {
+  label: string
+  kind: 'button' | 'link'
+  variant?: 'default' | 'outline' | 'destructive'
+  onClick?: () => void
+  href?: string
+  busy?: boolean
 }
 
 const STEP_EXPECTATIONS: Record<number, { label: string; expected: string }> = {
@@ -64,6 +85,20 @@ const STATUS_LABELS: Record<string, string> = {
   completed: 'terminée',
   failed: 'échouée',
   killed: 'arrêtée',
+}
+
+const CHECK_TONE_CLASSES: Record<DashboardCheckTone, string> = {
+  pass: 'border-green-200 bg-green-50 text-green-800',
+  warn: 'border-amber-200 bg-amber-50 text-amber-800',
+  fail: 'border-red-200 bg-red-50 text-red-800',
+  info: 'border-slate-200 bg-slate-50 text-slate-700',
+}
+
+const CHECK_BADGE_VARIANT: Record<DashboardCheckTone, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+  pass: 'default',
+  warn: 'secondary',
+  fail: 'destructive',
+  info: 'outline',
 }
 
 function getStepActionLabel(stepNumber: number): string {
@@ -161,10 +196,22 @@ function getStepGuidance(params: {
   }
 }
 
+function getFocalStep(run: RunWithSteps): number {
+  const highestCompleted = [...run.steps]
+    .filter((step) => step.status === 'completed')
+    .sort((a, b) => b.stepNumber - a.stepNumber)[0]?.stepNumber
+
+  if (run.status === 'completed') return highestCompleted ?? run.currentStep ?? 1
+
+  if (run.currentStep && run.currentStep > 0) return run.currentStep
+
+  return highestCompleted ?? 1
+}
+
 export default function RunPage() {
   const { id } = useParams<{ id: string }>()
   const [run, setRun] = useState<RunWithSteps | null>(null)
-  const [selectedStep, setSelectedStep] = useState<number>(1)
+  const [selectedStepOverride, setSelectedStepOverride] = useState<number | null>(null)
   const [deliverable, setDeliverable] = useState<Deliverable | null>(null)
   const [draft, setDraft] = useState('')
   const [loadingDeliverable, setLoadingDeliverable] = useState(false)
@@ -172,6 +219,10 @@ export default function RunPage() {
   const [deliverableNotice, setDeliverableNotice] = useState('')
   const [runNotice, setRunNotice] = useState('')
   const [actionBusy, setActionBusy] = useState<'launch' | 'validate' | 'rewind' | 'kill' | null>(null)
+  const [traces, setTraces] = useState<DashboardAgentTrace[]>([])
+  const [failoverLog, setFailoverLog] = useState<DashboardFailoverEntry[]>([])
+  const focalStep = useMemo(() => (run ? getFocalStep(run) : 1), [run])
+  const selectedStep = selectedStepOverride ?? focalStep
 
   useEffect(() => {
     void loadRun()
@@ -182,19 +233,49 @@ export default function RunPage() {
   }, [id])
 
   useEffect(() => {
-    if (!run) return
-    setSelectedStep(run.currentStep ?? 1)
-  }, [run?.id, run?.currentStep])
+    setSelectedStepOverride(null)
+  }, [run?.id])
 
   useEffect(() => {
     if (!run) return
     void loadDeliverable(selectedStep)
-  }, [run, selectedStep])
+  }, [run?.id, selectedStep])
+
+  useEffect(() => {
+    if (!run) return
+
+    const needsTraces = selectedStep === 2 || run.currentStep === 2
+    const needsFailoverLog = selectedStep >= 5 || run.status === 'failed' || failoverLog.length > 0
+
+    if (needsTraces) void loadTraces()
+    if (needsFailoverLog) void loadFailoverLog()
+
+    if (!needsTraces && !needsFailoverLog) return
+
+    const interval = window.setInterval(() => {
+      if (needsTraces) void loadTraces()
+      if (needsFailoverLog) void loadFailoverLog()
+    }, 5000)
+
+    return () => window.clearInterval(interval)
+  }, [run?.id, run?.status, run?.currentStep, selectedStep, failoverLog.length])
 
   async function loadRun() {
     const res = await fetch(`/api/runs/${id}`)
     const json = await res.json()
     if (json.data) setRun(json.data)
+  }
+
+  async function loadTraces() {
+    const res = await fetch(`/api/runs/${id}/traces`, { cache: 'no-store' })
+    const json = await res.json()
+    if (json.data) setTraces(json.data)
+  }
+
+  async function loadFailoverLog() {
+    const res = await fetch(`/api/runs/${id}/failover-log`, { cache: 'no-store' })
+    const json = await res.json()
+    if (json.data) setFailoverLog(json.data)
   }
 
   async function loadDeliverable(stepNumber: number) {
@@ -329,11 +410,18 @@ export default function RunPage() {
     }
   }, [deliverable?.content])
 
+  const parsedDeliverable = useMemo(
+    () => parseDeliverableContent(deliverable?.content),
+    [deliverable?.content],
+  )
+
   if (!run) return <p className="text-sm text-muted-foreground">Chargement...</p>
 
-  const currentStep = run.currentStep ?? 1
+  const currentStep = run.currentStep ?? focalStep
+  const completedSteps = run.steps.filter((step) => step.status === 'completed').length
   const currentStepInfo = STEP_EXPECTATIONS[selectedStep]
   const selectedRunStep = run.steps.find((step) => step.stepNumber === selectedStep)
+  const currentRunStep = run.steps.find((step) => step.stepNumber === currentStep)
   const selectedStatus = selectedRunStep?.status ?? 'pending'
   const selectedGuidance = getStepGuidance({
     stepNumber: selectedStep,
@@ -352,6 +440,70 @@ export default function RunPage() {
   const canValidateCurrentStep = isCurrentSelection && run.status === 'paused' && selectedRunStep?.status === 'completed' && currentStep < TOTAL_PIPELINE_STEPS
   const canRelaunchCurrentStep = isCurrentSelection && (run.status === 'paused' || run.status === 'failed')
   const canRewindToSelectedStep = selectedStep < currentStep && selectedRunStep?.status === 'completed' && run.status !== 'running'
+  const validationChecks = buildValidationChecks({
+    stepNumber: selectedStep,
+    runStep: selectedRunStep,
+    deliverable: parsedDeliverable,
+  })
+  const contextSections = buildContextSections({
+    stepNumber: selectedStep,
+    deliverable: parsedDeliverable,
+    runStep: selectedRunStep,
+    traces,
+  })
+  const latestCompletedStep = [...run.steps]
+    .filter((step) => step.completedAt)
+    .sort((a, b) => new Date(b.completedAt ?? 0).getTime() - new Date(a.completedAt ?? 0).getTime())[0] ?? null
+
+  let primaryAction: PrimaryAction | null = null
+  if (run.status === 'running') {
+    primaryAction = {
+      label: actionBusy === 'kill' ? 'Arrêt en cours...' : 'Arrêter l’étape en cours',
+      kind: 'button',
+      variant: 'destructive',
+      onClick: handleKill,
+      busy: actionBusy === 'kill',
+    }
+  } else if (canValidateCurrentStep) {
+    primaryAction = {
+      label: actionBusy === 'validate' ? 'Validation...' : 'Valider et ouvrir la suite',
+      kind: 'button',
+      variant: 'default',
+      onClick: handleValidateCurrentStep,
+      busy: actionBusy === 'validate',
+    }
+  } else if (canLaunchCurrentStep) {
+    primaryAction = {
+      label: actionBusy === 'launch' ? `Lancement de l’étape ${selectedStep}...` : `Lancer l’étape ${selectedStep}`,
+      kind: 'button',
+      variant: 'default',
+      onClick: handleLaunchCurrentStep,
+      busy: actionBusy === 'launch',
+    }
+  } else if (canRelaunchCurrentStep) {
+    primaryAction = {
+      label: actionBusy === 'launch' ? 'Relance...' : 'Relancer cette étape',
+      kind: 'button',
+      variant: 'default',
+      onClick: handleLaunchCurrentStep,
+      busy: actionBusy === 'launch',
+    }
+  } else if (canRewindToSelectedStep) {
+    primaryAction = {
+      label: actionBusy === 'rewind' ? 'Repositionnement...' : 'Repartir depuis cette étape',
+      kind: 'button',
+      variant: 'outline',
+      onClick: handleRewindToSelectedStep,
+      busy: actionBusy === 'rewind',
+    }
+  } else if (deliverable?.pageHref) {
+    primaryAction = {
+      label: getStepViewLabel(selectedStep),
+      kind: 'link',
+      variant: 'outline',
+      href: deliverable.pageHref,
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -400,183 +552,389 @@ export default function RunPage() {
         </div>
       )}
 
-      <div className="grid gap-3 lg:grid-cols-[380px_minmax(0,1fr)]">
-        <div className="space-y-3">
-          <div className="rounded-lg border p-4">
-            <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
-              <span>Coût : {(run.costEur ?? 0).toFixed(2)} €</span>
-              <span className={getProjectStatusClass(run.status)}>Statut : {getProjectStatusLabel(run)}</span>
-              <span>Étape focale : {getRunStepLabel(run)}</span>
-              <span>Action attendue : {getStepActionLabel(currentStep)}</span>
-              {run.projectConfig && (
-                <span>
-                  Réunion LLM : {run.projectConfig.meetingLlmMode} · {run.projectConfig.meetingLlmModel}
-                </span>
-              )}
-            </div>
-          </div>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Cockpit projet</CardTitle>
+              <CardDescription>
+                Vue rapide pour savoir où tu en es et ce qui se passe réellement maintenant.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-lg border px-3 py-3">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">Statut</div>
+                <div className={`mt-1 text-sm font-semibold ${getProjectStatusClass(run.status)}`}>
+                  {getProjectStatusLabel(run)}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">{completedSteps}/{TOTAL_PIPELINE_STEPS} étapes terminées</div>
+              </div>
 
-          <div className="rounded-lg border p-4 space-y-3">
-            <div>
-              <h2 className="text-base font-semibold">Tunnel {TOTAL_PIPELINE_STEPS} étapes</h2>
-              <p className="text-sm text-muted-foreground">
-                Chaque carte = un livrable attendu. Tu consultes ici, puis tu décides explicitement quand avancer.
-              </p>
-            </div>
+              <div className="rounded-lg border px-3 py-3">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">Étape active</div>
+                <div className="mt-1 text-sm font-semibold">{getRunStepLabel(run)}</div>
+                <div className="mt-1 text-xs text-muted-foreground">{getStepActionLabel(currentStep)}</div>
+              </div>
 
-            <div className="space-y-2">
-              {run.steps.map((step) => {
-                const meta = STEP_EXPECTATIONS[step.stepNumber]
-                const isSelected = step.stepNumber === selectedStep
-                return (
-                  <button
-                    key={step.id}
-                    type="button"
-                    onClick={() => setSelectedStep(step.stepNumber)}
-                    className={`w-full rounded-lg border p-3 text-left transition ${isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'}`}
+              <div className="rounded-lg border px-3 py-3">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">Santé runtime</div>
+                <div className="mt-1 text-sm font-semibold">
+                  Heartbeat {run.lastHeartbeat ? formatRelativeTime(run.lastHeartbeat) : '—'}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Durée étape : {formatStepDuration(currentRunStep)}
+                </div>
+              </div>
+
+              <div className="rounded-lg border px-3 py-3">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">Configuration réunion</div>
+                <div className="mt-1 text-sm font-semibold">
+                  {run.projectConfig ? `${run.projectConfig.meetingLlmMode} · ${run.projectConfig.meetingLlmModel}` : 'Non renseignée'}
+                </div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Coût run : {(run.costEur ?? 0).toFixed(2)} €
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Décision maintenant</CardTitle>
+              <CardDescription>{selectedGuidance.title}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className={`rounded-md border px-3 py-3 text-sm ${guidanceToneClasses}`}>
+                {selectedGuidance.body}
+              </div>
+
+              {primaryAction && (
+                primaryAction.kind === 'link' && primaryAction.href ? (
+                  <Link href={primaryAction.href} className="inline-flex w-full">
+                    <Button variant={primaryAction.variant ?? 'default'} className="w-full justify-center">
+                      {primaryAction.label}
+                    </Button>
+                  </Link>
+                ) : (
+                  <Button
+                    variant={primaryAction.variant ?? 'default'}
+                    className="w-full justify-center"
+                    onClick={primaryAction.onClick}
+                    disabled={primaryAction.busy}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold">Étape {step.stepNumber} — {meta?.label ?? step.stepName}</div>
-                        <div className="mt-1 text-xs text-muted-foreground">{meta?.expected ?? step.stepName}</div>
-                        <div className="mt-1 text-[11px] text-foreground/80">
-                          Action : {getStepActionLabel(step.stepNumber)}
-                        </div>
-                      </div>
-                      <Badge variant={step.status === 'completed' ? 'default' : step.status === 'running' ? 'secondary' : step.status === 'failed' ? 'destructive' : 'outline'}>
-                        {STATUS_LABELS[step.status] ?? step.status}
-                      </Badge>
-                    </div>
-                  </button>
+                    {primaryAction.label}
+                  </Button>
                 )
-              })}
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-lg border p-4 space-y-4 min-h-140">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="text-base font-semibold">
-                Livrable — Étape {selectedStep} · {currentStepInfo?.label ?? selectedRunStep?.stepName}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {deliverable?.expected ?? currentStepInfo?.expected}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant={selectedRunStep?.status === 'completed' ? 'default' : selectedRunStep?.status === 'running' ? 'secondary' : selectedRunStep?.status === 'failed' ? 'destructive' : 'outline'}>
-                {STATUS_LABELS[selectedStatus] ?? selectedStatus}
-              </Badge>
-              {deliverable?.fileName && (
-                <Badge variant="outline">{deliverable.fileName}</Badge>
               )}
-            </div>
-          </div>
 
-          <div className={`rounded-md border px-3 py-3 text-sm ${guidanceToneClasses}`}>
-            <div className="font-semibold">{selectedGuidance.title}</div>
-            <div className="mt-1">{selectedGuidance.body}</div>
-          </div>
+              <div className="flex flex-wrap gap-2">
+                {canValidateCurrentStep && canRelaunchCurrentStep && (
+                  <Button variant="outline" onClick={handleLaunchCurrentStep} disabled={actionBusy === 'launch'} size="sm">
+                    {actionBusy === 'launch' ? 'Relance...' : 'Relancer cette étape'}
+                  </Button>
+                )}
+                {canRewindToSelectedStep && !primaryAction?.label.includes('Repartir') && (
+                  <Button variant="outline" onClick={handleRewindToSelectedStep} disabled={actionBusy === 'rewind'} size="sm">
+                    {actionBusy === 'rewind' ? 'Repositionnement...' : 'Repartir depuis cette étape'}
+                  </Button>
+                )}
+                {deliverable?.pageHref && (!primaryAction || primaryAction.kind !== 'link') && (
+                  <Link href={deliverable.pageHref} className="inline-flex">
+                    <Button variant="outline" size="sm">
+                      {getStepViewLabel(selectedStep)}
+                    </Button>
+                  </Link>
+                )}
+              </div>
 
-          <div className="flex flex-wrap gap-2">
-            {canLaunchCurrentStep && (
-              <Button onClick={handleLaunchCurrentStep} disabled={actionBusy === 'launch'} size="sm">
-                {actionBusy === 'launch' ? 'Lancement...' : `Lancer l’étape ${selectedStep}`}
-              </Button>
-            )}
-            {canValidateCurrentStep && (
-              <Button onClick={handleValidateCurrentStep} disabled={actionBusy === 'validate'} size="sm">
-                {actionBusy === 'validate' ? 'Validation...' : 'Valider et débloquer la suite'}
-              </Button>
-            )}
-            {canRelaunchCurrentStep && (
-              <Button variant="outline" onClick={handleLaunchCurrentStep} disabled={actionBusy === 'launch'} size="sm">
-                {actionBusy === 'launch' ? 'Relance...' : 'Relancer cette étape'}
-              </Button>
-            )}
-            {canRewindToSelectedStep && (
-              <Button variant="outline" onClick={handleRewindToSelectedStep} disabled={actionBusy === 'rewind'} size="sm">
-                {actionBusy === 'rewind' ? 'Repositionnement...' : 'Repartir depuis cette étape'}
-              </Button>
-            )}
-            {deliverable?.pageHref && (
-              <Link href={deliverable.pageHref} className="inline-flex">
-                <Button variant={selectedStatus === 'running' ? 'default' : 'outline'} size="sm">
-                  {getStepViewLabel(selectedStep)}
-                </Button>
-              </Link>
-            )}
-            <Link href={`/runs/${id}/preview`} className="inline-flex">
-              <Button variant="outline" size="sm">Preview</Button>
-            </Link>
-            <Link href={`/runs/${id}/storyboard`} className="inline-flex">
-              <Button variant="outline" size="sm">Storyboard</Button>
-            </Link>
-            <Link href={`/runs/${id}/studio`} className="inline-flex">
-              <Button variant="outline" size="sm">Réunion</Button>
-            </Link>
-          </div>
-
-          {runNotice && (
-            <div className="rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm text-blue-900">
-              {runNotice}
-            </div>
-          )}
-
-          {deliverableNotice && (
-            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              {deliverableNotice}
-            </div>
-          )}
-
-          {loadingDeliverable ? (
-            <div className="rounded-md border bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
-              Chargement du livrable...
-            </div>
-          ) : deliverable?.editable ? (
-            <div className="space-y-3">
-              <div className="space-y-1 text-xs text-muted-foreground">
-                <div>
-                  {selectedStatus === 'running'
-                    ? `Cette étape est en cours. Si le contenu est encore vide, c’est normal : ${getStepActionLabel(selectedStep)} remplit ce livrable automatiquement.`
-                    : 'Édition clavier active.'}
+              {runNotice && (
+                <div className="rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                  {runNotice}
                 </div>
-                <div>
-                  Raccourci : <span className="font-mono">⌘/Ctrl + S</span> pour sauvegarder.
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Repères utiles</CardTitle>
+              <CardDescription>Contexte minimal pour ne pas te perdre entre deux validations.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                <span className="text-muted-foreground">Étape inspectée</span>
+                <span className="font-medium">{selectedStep}/{TOTAL_PIPELINE_STEPS}</span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                <span className="text-muted-foreground">Dernière étape finie</span>
+                <span className="font-medium">
+                  {latestCompletedStep ? `Étape ${latestCompletedStep.stepNumber}` : 'Aucune'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                <span className="text-muted-foreground">Fin dernière activité</span>
+                <span className="font-medium">
+                  {latestCompletedStep?.completedAt ? formatRelativeTime(latestCompletedStep.completedAt) : '—'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+                <span className="text-muted-foreground">Traces réunion</span>
+                <span className="font-medium">{traces.length}</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>Validation avant passage</CardTitle>
+              <CardDescription>
+                Preuves concrètes pour décider si l’étape {selectedStep} mérite validation ou relance.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 md:grid-cols-2">
+              {validationChecks.length === 0 ? (
+                <div className="rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground">
+                  Pas encore de critères calculés pour cette étape.
                 </div>
-              </div>
-              <textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
-                    e.preventDefault()
-                    void saveDeliverable()
-                  }
-                }}
-                placeholder={selectedStatus === 'running'
-                  ? `Étape en cours : ${getStepActionLabel(selectedStep)}. Le contenu apparaîtra ici dès que le système aura fini. Si tu veux voir le détail maintenant, ouvre la vue dédiée.`
-                  : `Contenu éditable de l’étape ${selectedStep}.`}
-                className="min-h-108 w-full rounded-md border bg-background p-3 font-mono text-xs"
-              />
-              <div className="flex justify-end">
-                <Button onClick={saveDeliverable} disabled={savingDeliverable}>
-                  {savingDeliverable ? 'Sauvegarde...' : 'Sauvegarder'}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="rounded-md border bg-muted/20 p-3 text-sm">
-                {deliverable?.summary ?? 'Aucun livrable disponible pour cette étape.'}
-              </div>
-              <pre className="max-h-108 overflow-auto rounded-md border bg-background p-3 text-xs whitespace-pre-wrap wrap-break-word">
-                {deliverablePreview || 'Aucun contenu texte à afficher ici. Utilise la vue dédiée pour consulter le livrable.'}
-              </pre>
-            </div>
-          )}
+              ) : validationChecks.map((check) => (
+                <div key={`${check.label}-${check.detail}`} className={`rounded-lg border px-3 py-3 ${CHECK_TONE_CLASSES[check.tone]}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="font-medium">{check.label}</div>
+                    <Badge variant={CHECK_BADGE_VARIANT[check.tone]}>{check.tone}</Badge>
+                  </div>
+                  <div className="mt-2 text-sm">{check.detail}</div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
         </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Tunnel {TOTAL_PIPELINE_STEPS} étapes</CardTitle>
+            <CardDescription>
+              Tu peux inspecter n’importe quel livrable, sans perdre la main sur le projet actif.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {run.steps.map((step) => {
+              const meta = STEP_EXPECTATIONS[step.stepNumber]
+              const isSelected = step.stepNumber === selectedStep
+              const isCurrent = step.stepNumber === currentStep
+              return (
+                <button
+                  key={step.id}
+                  type="button"
+                    onClick={() => setSelectedStepOverride(step.stepNumber)}
+                  className={`w-full rounded-lg border p-3 text-left transition ${isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">Étape {step.stepNumber} — {meta?.label ?? step.stepName}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{meta?.expected ?? step.stepName}</div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-foreground/80">
+                        <span>Action : {getStepActionLabel(step.stepNumber)}</span>
+                        {isCurrent && <span>· étape focale</span>}
+                      </div>
+                    </div>
+                    <Badge variant={step.status === 'completed' ? 'default' : step.status === 'running' ? 'secondary' : step.status === 'failed' ? 'destructive' : 'outline'}>
+                      {STATUS_LABELS[step.status] ?? step.status}
+                    </Badge>
+                  </div>
+                </button>
+              )
+            })}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <Card>
+          <CardHeader>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle>
+                  Vue contextuelle — Étape {selectedStep} · {currentStepInfo?.label ?? selectedRunStep?.stepName}
+                </CardTitle>
+                <CardDescription>
+                  {deliverable?.expected ?? currentStepInfo?.expected}
+                </CardDescription>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={selectedRunStep?.status === 'completed' ? 'default' : selectedRunStep?.status === 'running' ? 'secondary' : selectedRunStep?.status === 'failed' ? 'destructive' : 'outline'}>
+                  {STATUS_LABELS[selectedStatus] ?? selectedStatus}
+                </Badge>
+                {deliverable?.fileName && <Badge variant="outline">{deliverable.fileName}</Badge>}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {loadingDeliverable ? (
+              <div className="rounded-md border bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
+                Chargement du livrable...
+              </div>
+            ) : contextSections.length === 0 ? (
+              <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
+                Aucune vue contextuelle disponible pour cette étape.
+              </div>
+            ) : (
+              <div className="grid gap-3 md:grid-cols-2">
+                {contextSections.map((section) => (
+                  <div key={section.title} className="rounded-lg border p-4">
+                    <div className="text-sm font-semibold">{section.title}</div>
+                    {section.description && (
+                      <div className="mt-1 text-xs text-muted-foreground">{section.description}</div>
+                    )}
+                    {section.body && (
+                      <div className="mt-3 rounded-md bg-muted/40 px-3 py-2 text-sm">{section.body}</div>
+                    )}
+                    {section.items && section.items.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        {section.items.map((item) => (
+                          <div key={`${section.title}-${item.label}-${item.value}`} className={`rounded-md border px-3 py-2 text-sm ${item.tone ? CHECK_TONE_CLASSES[item.tone] : 'border-border bg-background text-foreground'}`}>
+                            <div className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</div>
+                            <div className="mt-1">{item.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Vues rapides</CardTitle>
+            <CardDescription>
+              Raccourcis utiles pour ouvrir la vue dédiée de l’étape sans quitter le cockpit.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2">
+              {deliverable?.pageHref && (
+                <Link href={deliverable.pageHref} className="inline-flex">
+                  <Button variant="outline" size="sm">{getStepViewLabel(selectedStep)}</Button>
+                </Link>
+              )}
+              <Link href={`/runs/${id}/preview`} className="inline-flex">
+                <Button variant="outline" size="sm">Preview</Button>
+              </Link>
+              <Link href={`/runs/${id}/storyboard`} className="inline-flex">
+                <Button variant="outline" size="sm">Storyboard</Button>
+              </Link>
+              <Link href={`/runs/${id}/studio`} className="inline-flex">
+                <Button variant="outline" size="sm">Réunion</Button>
+              </Link>
+            </div>
+
+            {deliverableNotice && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                {deliverableNotice}
+              </div>
+            )}
+
+            <details className="rounded-lg border p-4">
+              <summary className="cursor-pointer list-none text-sm font-semibold">
+                Source brute / édition avancée
+              </summary>
+              <div className="mt-4 space-y-3">
+                <div className="rounded-md border bg-muted/20 p-3 text-sm">
+                  {deliverable?.summary ?? 'Aucun livrable disponible pour cette étape.'}
+                </div>
+
+                {deliverable?.editable ? (
+                  <div className="space-y-3">
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      <div>
+                        {selectedStatus === 'running'
+                          ? `Cette étape est en cours. Si le contenu est encore vide, c’est normal : ${getStepActionLabel(selectedStep)} remplit ce livrable automatiquement.`
+                          : 'Édition clavier active pour les utilisateurs avancés.'}
+                      </div>
+                      <div>
+                        Raccourci : <span className="font-mono">⌘/Ctrl + S</span> pour sauvegarder.
+                      </div>
+                    </div>
+                    <textarea
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+                          e.preventDefault()
+                          void saveDeliverable()
+                        }
+                      }}
+                      placeholder={selectedStatus === 'running'
+                        ? `Étape en cours : ${getStepActionLabel(selectedStep)}. Le contenu apparaîtra ici dès que le système aura fini.`
+                        : `Contenu éditable de l’étape ${selectedStep}.`}
+                      className="min-h-96 w-full rounded-md border bg-background p-3 font-mono text-xs"
+                    />
+                    <div className="flex justify-end">
+                      <Button onClick={saveDeliverable} disabled={savingDeliverable}>
+                        {savingDeliverable ? 'Sauvegarde...' : 'Sauvegarder'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <pre className="max-h-108 overflow-auto rounded-md border bg-background p-3 text-xs whitespace-pre-wrap wrap-break-word">
+                    {deliverablePreview || 'Aucun contenu texte à afficher ici. Utilise la vue dédiée pour consulter le livrable.'}
+                  </pre>
+                )}
+              </div>
+            </details>
+
+            <details className="rounded-lg border p-4">
+              <summary className="cursor-pointer list-none text-sm font-semibold">
+                Détails techniques
+              </summary>
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div className="space-y-3">
+                  <div className="text-sm font-medium">Étape sélectionnée</div>
+                  <div className="space-y-2 text-sm">
+                    <div className="rounded-md border px-3 py-2">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Provider</div>
+                      <div className="mt-1">{selectedRunStep?.providerUsed ?? '—'}</div>
+                    </div>
+                    <div className="rounded-md border px-3 py-2">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Durée</div>
+                      <div className="mt-1">{formatStepDuration(selectedRunStep)}</div>
+                    </div>
+                    <div className="rounded-md border px-3 py-2">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Erreur</div>
+                      <div className="mt-1 wrap-break-word">{selectedRunStep?.error ?? 'Aucune'}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="text-sm font-medium">Logs failover / providers</div>
+                  {failoverLog.length === 0 ? (
+                    <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
+                      Aucun log technique remonté pour ce projet.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {failoverLog.slice(0, 8).map((entry, index) => {
+                        const summary = summarizeTechnicalLog(entry)
+                        return (
+                          <div key={`${summary.title}-${index}`} className="rounded-md border px-3 py-2 text-sm">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="font-medium">{summary.title}</div>
+                              <div className="text-xs text-muted-foreground">{formatRelativeTime(entry.timestamp ?? null)}</div>
+                            </div>
+                            <div className="mt-1 text-muted-foreground">{summary.detail}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </details>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
