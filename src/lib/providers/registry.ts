@@ -1,16 +1,25 @@
 import type { BaseProvider, ProviderHealth } from './types'
 
+function dedupeProvidersByName<T extends BaseProvider>(providers: T[]): T[] {
+  const byName = new Map<string, T>()
+  for (const provider of providers) {
+    byName.set(provider.name, provider)
+  }
+  return [...byName.values()]
+}
+
 class ProviderRegistry {
   private providers: Map<string, BaseProvider[]> = new Map()
 
   register(provider: BaseProvider): void {
     const list = this.providers.get(provider.type) ?? []
-    list.push(provider)
-    this.providers.set(provider.type, list)
+    const unique = list.filter((entry) => entry.name !== provider.name)
+    unique.push(provider)
+    this.providers.set(provider.type, unique)
   }
 
   getByType(type: string): BaseProvider[] {
-    return this.providers.get(type) ?? []
+    return dedupeProvidersByName(this.providers.get(type) ?? [])
   }
 
   async getBest(type: string): Promise<BaseProvider | null> {
@@ -49,8 +58,9 @@ class ProviderRegistry {
     const results = new Map<string, { name: string; health: ProviderHealth }[]>()
 
     for (const [type, list] of this.providers) {
+      const uniqueProviders = dedupeProvidersByName(list)
       const checks = await Promise.all(
-        list.map(async (p) => ({
+        uniqueProviders.map(async (p) => ({
           name: p.name,
           health: await p.healthCheck(),
         }))
@@ -64,7 +74,7 @@ class ProviderRegistry {
   getAllProviders(): { name: string; type: string }[] {
     const all: { name: string; type: string }[] = []
     for (const [, list] of this.providers) {
-      for (const p of list) {
+      for (const p of dedupeProvidersByName(list)) {
         all.push({ name: p.name, type: p.type })
       }
     }

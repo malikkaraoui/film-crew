@@ -10,8 +10,9 @@ class TestRegistry {
 
   register(p: { name: string; type: string; health: ProviderHealth }) {
     const list = this.providers.get(p.type) ?? []
-    list.push(p)
-    this.providers.set(p.type, list)
+    const unique = list.filter((entry) => entry.name !== p.name)
+    unique.push(p)
+    this.providers.set(p.type, unique)
   }
 
   getByType(type: string) {
@@ -68,5 +69,14 @@ describe('ProviderRegistry', () => {
 
     const fallback = registry.getFallback('video', 'seedance')
     expect(fallback).toBeNull()
+  })
+
+  it('remplace un provider de meme nom au lieu de le dupliquer', () => {
+    registry.register({ name: 'ollama', type: 'llm', health: { status: 'free', lastCheck: '' } })
+    registry.register({ name: 'ollama', type: 'llm', health: { status: 'busy', lastCheck: '' } })
+
+    const llmProviders = registry.getByType('llm')
+    expect(llmProviders).toHaveLength(1)
+    expect(llmProviders[0].health.status).toBe('busy')
   })
 })

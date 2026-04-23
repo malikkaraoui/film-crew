@@ -17,8 +17,6 @@ import { pexelsProvider } from './stock/pexels'
 import { pixabayProvider } from './stock/pixabay'
 import type { TTSProvider } from './types'
 
-let bootstrapped = false
-
 // Priorité TTS configurable via TTS_PRIORITY
 // Désactivation via TTS_DISABLED (ex: "fish-audio" ou "fish-audio,piper-local")
 // Providers disponibles :
@@ -35,9 +33,6 @@ const TTS_PROVIDERS: Record<string, TTSProvider> = {
 const DEFAULT_TTS_PRIORITY = 'kokoro-local,piper-local,system-tts,fish-audio'
 
 export function bootstrapProviders(): void {
-  if (bootstrapped) return
-  bootstrapped = true
-
   // LLM
   registry.register(ollamaProvider)
 
