@@ -39,6 +39,26 @@ const TYPE_BADGES: Record<string, { label: string; variant: 'default' | 'seconda
   brief_section: { label: 'Brief', variant: 'default' },
 }
 
+function formatTraceOffset(from: string, to: string): string {
+  const start = new Date(from).getTime()
+  const current = new Date(to).getTime()
+
+  if (!Number.isFinite(start) || !Number.isFinite(current) || current < start) {
+    return '--:--'
+  }
+
+  const totalSeconds = Math.floor((current - start) / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+
+  if (hours > 0) {
+    return `+${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  }
+
+  return `+${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+}
+
 export function AgentChat({
   traces,
   loading,
@@ -49,6 +69,7 @@ export function AgentChat({
   meetingState?: MeetingState | null
 }) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const firstTraceTime = traces[0]?.createdAt ?? null
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -60,13 +81,33 @@ export function AgentChat({
 
   if (traces.length === 0) {
     return (
-      <div className="py-8 text-center">
-        <p className="text-sm text-muted-foreground">
-          Aucune trace de réunion pour ce run.
-        </p>
-        <p className="text-xs text-muted-foreground mt-1">
-          La réunion démarre automatiquement à l&apos;étape Brainstorm.
-        </p>
+      <div className="py-8 text-center space-y-4">
+        {meetingState?.nextSpeaker ? (
+          <div className="mx-auto max-w-xl rounded-lg border border-blue-200 bg-blue-50 px-4 py-4 text-left dark:border-blue-900/50 dark:bg-blue-950/30">
+            <div className="text-sm font-medium text-blue-800 dark:text-blue-200">
+              La réunion a démarré, mais la première trace n&apos;est pas encore arrivée.
+            </div>
+            <div className="mt-1 text-xs text-blue-700 dark:text-blue-300">
+              Prochaine prise de parole attendue : {meetingState.nextSpeakerLabel}
+            </div>
+            <div className="mt-3">
+              <SpeakingIndicator
+                agent={meetingState.nextSpeaker}
+                label={meetingState.nextSpeakerLabel}
+                phase={`Phase ${meetingState.phase.number} — ${meetingState.phase.name} · ${meetingState.progress}%`}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        <div>
+          <p className="text-sm text-muted-foreground">
+            Aucune trace de réunion pour ce run.
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            La réunion démarre automatiquement à l&apos;étape Brainstorm.
+          </p>
+        </div>
       </div>
     )
   }
@@ -90,12 +131,11 @@ export function AgentChat({
                   {typeBadge.label}
                 </Badge>
               )}
-              <span className="ml-auto text-[10px] text-muted-foreground">
-                {new Date(trace.createdAt).toLocaleTimeString('fr-FR', {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  second: '2-digit',
-                })}
+              <span
+                className="ml-auto text-[10px] font-mono text-muted-foreground"
+                title={new Date(trace.createdAt).toLocaleString('fr-FR')}
+              >
+                {firstTraceTime ? formatTraceOffset(firstTraceTime, trace.createdAt) : '--:--'}
               </span>
             </div>
 

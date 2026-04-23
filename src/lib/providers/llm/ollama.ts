@@ -56,6 +56,16 @@ export const ollamaProvider: LLMProvider = {
     const host = opts.host || DEFAULT_OLLAMA_URL
     const timeoutMs = opts.timeoutMs ?? DEFAULT_OLLAMA_CHAT_TIMEOUT_MS
     const start = Date.now()
+    const requestBody = {
+      model,
+      messages,
+      stream: false,
+      think: false,
+      options: {
+        temperature: opts.temperature ?? 0.7,
+        num_predict: opts.maxTokens ?? 2048,
+      },
+    }
 
     runtimeState.activeRequests += 1
     runtimeState.activeModels.add(model)
@@ -68,15 +78,7 @@ export const ollamaProvider: LLMProvider = {
           ...(opts.headers ?? {}),
         },
         signal: AbortSignal.timeout(timeoutMs),
-        body: JSON.stringify({
-          model,
-          messages,
-          stream: false,
-          options: {
-            temperature: opts.temperature ?? 0.7,
-            num_predict: opts.maxTokens ?? 2048,
-          },
-        }),
+        body: JSON.stringify(requestBody),
       })
 
       if (!res.ok) {
@@ -86,10 +88,19 @@ export const ollamaProvider: LLMProvider = {
 
       const data = await res.json()
       const latencyMs = Date.now() - start
-      const content = data.message?.content ?? ''
+      const content = data.message?.content ?? data.response ?? ''
+      const thinking = data.message?.thinking ?? data.thinking ?? ''
 
       if (!content.trim()) {
-        throw new Error(`Ollama réponse vide (model=${model}, tokens=${data.eval_count ?? 0}, prompt_tokens=${data.prompt_eval_count ?? 0})`)
+        const details = [
+          `model=${model}`,
+          `tokens=${data.eval_count ?? 0}`,
+          `prompt_tokens=${data.prompt_eval_count ?? 0}`,
+          `done_reason=${data.done_reason ?? 'unknown'}`,
+          thinking ? 'thinking_only=true' : null,
+        ].filter(Boolean).join(', ')
+
+        throw new Error(`Ollama réponse vide (${details})`)
       }
 
       return {
