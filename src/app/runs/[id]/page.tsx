@@ -545,6 +545,7 @@ export default function RunPage() {
     green: 'border-green-300 bg-green-50 text-green-900',
     red: 'border-destructive bg-destructive/10 text-destructive',
   }[selectedGuidance.tone]
+  const shouldShowGuidanceMessage = !(run.status === 'failed' && selectedGuidance.tone === 'red')
   const isCurrentSelection = selectedStep === currentStep
   const canLaunchCurrentStep = isCurrentSelection && run.status === 'pending'
   const canValidateCurrentStep = isCurrentSelection && run.status === 'paused' && selectedRunStep?.status === 'completed' && currentStep < TOTAL_PIPELINE_STEPS
@@ -745,9 +746,11 @@ export default function RunPage() {
               <CardDescription>{selectedGuidance.title}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className={`rounded-md border px-3 py-3 text-sm ${guidanceToneClasses}`}>
-                {selectedGuidance.body}
-              </div>
+                {shouldShowGuidanceMessage && (
+                  <div className={`rounded-md border px-3 py-3 text-sm ${guidanceToneClasses}`}>
+                    {selectedGuidance.body}
+                  </div>
+                )}
 
               {isLlmBackedStep(selectedStep) && isCurrentSelection && (
                 <div className="rounded-lg border p-3 space-y-3">
