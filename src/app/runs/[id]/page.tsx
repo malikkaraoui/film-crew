@@ -8,9 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import type { LlmMode, ProjectConfig, Run, RunStep, StepLlmConfig } from '@/types/run'
 import { TOTAL_PIPELINE_STEPS } from '@/lib/pipeline/constants'
-import { getProjectStatusClass, getProjectStatusLabel, getRunStepLabel } from '@/lib/runs/presentation'
+import { getRunStepLabel } from '@/lib/runs/presentation'
 import {
-  buildContextSections,
   buildValidationChecks,
   formatRelativeTime,
   formatStepDuration,
@@ -98,13 +97,6 @@ const CHECK_TONE_CLASSES: Record<DashboardCheckTone, string> = {
   warn: 'border-amber-200 bg-amber-50 text-amber-800',
   fail: 'border-red-200 bg-red-50 text-red-800',
   info: 'border-slate-200 bg-slate-50 text-slate-700',
-}
-
-const CHECK_BADGE_VARIANT: Record<DashboardCheckTone, 'default' | 'secondary' | 'destructive' | 'outline'> = {
-  pass: 'default',
-  warn: 'secondary',
-  fail: 'destructive',
-  info: 'outline',
 }
 
 function getStepActionLabel(stepNumber: number): string {
@@ -528,8 +520,6 @@ export default function RunPage() {
   if (!run) return <p className="text-sm text-muted-foreground">Chargement...</p>
 
   const currentStep = run.currentStep ?? focalStep
-  const completedSteps = run.steps.filter((step) => step.status === 'completed').length
-  const currentStepInfo = STEP_EXPECTATIONS[selectedStep]
   const selectedRunStep = run.steps.find((step) => step.stepNumber === selectedStep)
   const currentRunStep = run.steps.find((step) => step.stepNumber === currentStep)
   const selectedStatus = selectedRunStep?.status ?? 'pending'
@@ -559,19 +549,43 @@ export default function RunPage() {
     runStep: selectedRunStep,
     deliverable: parsedDeliverable,
   })
-  const contextSections = buildContextSections({
-    stepNumber: selectedStep,
-    deliverable: parsedDeliverable,
-    runStep: selectedRunStep,
-    traces,
-  })
-  const latestCompletedStep = [...run.steps]
-    .filter((step) => step.completedAt)
-    .sort((a, b) => new Date(b.completedAt ?? 0).getTime() - new Date(a.completedAt ?? 0).getTime())[0] ?? null
   const isStep2Focus = selectedStep === 2 && currentStep === 2
   const hasMeeting = traces.length > 0
   const isMeetingRunning = isStep2Focus && run.status === 'running'
   const showMeetingPanel = isStep2Focus && (isMeetingRunning || hasMeeting)
+  const topPanelTone = run.status === 'failed'
+    ? 'red'
+    : run.status === 'paused' || run.status === 'completed'
+      ? 'green'
+      : run.status === 'running'
+        ? 'blue'
+        : 'amber'
+  const topPanelClasses = {
+    amber: 'border-amber-200 bg-amber-50 text-amber-900',
+    blue: 'border-blue-200 bg-blue-50 text-blue-900',
+    green: 'border-green-200 bg-green-50 text-green-900',
+    red: 'border-destructive bg-destructive/10 text-destructive',
+  }[topPanelTone]
+
+  const topPanelTitle = run.status === 'failed'
+    ? `Le projet a échoué à l’étape ${currentStep}.`
+    : run.status === 'paused'
+      ? `Étape ${currentStep} terminée.`
+      : run.status === 'completed'
+        ? 'Projet terminé.'
+        : run.status === 'running'
+          ? `Étape ${currentStep} en cours.`
+          : `Projet prêt : l’étape ${currentStep} attend ton lancement manuel.`
+
+  const topPanelBody = run.status === 'failed'
+    ? currentRunStep?.error ?? 'Le run a remonté une erreur sans détail supplémentaire.'
+    : run.status === 'paused'
+      ? 'La validation débloque seulement l’étape suivante : rien ne repart automatiquement.'
+      : run.status === 'completed'
+        ? `Pipeline terminé sur ${run.steps.filter((s) => s.status === 'completed').length}/${TOTAL_PIPELINE_STEPS} étapes.`
+        : run.status === 'running'
+          ? `${getRunStepLabel(run)} · ${getStepActionLabel(currentStep)}`
+          : 'Le pipeline reste manuel : une étape à la fois, puis validation.'
 
   let primaryAction: PrimaryAction | null = null
   let secondaryAction: PrimaryAction | null = null
@@ -658,99 +672,40 @@ export default function RunPage() {
         <h1 className="text-xl font-semibold truncate max-w-md">{run.idea}</h1>
       </div>
 
-      {run.status === 'pending' && (
-        <div className="mt-6 rounded-md border border-amber-200 bg-amber-50 p-4">
-          <p className="text-sm text-amber-700">
-            Projet prêt : l’étape {currentStep} attend ton lancement manuel.
-          </p>
+      <div className={`mt-6 rounded-xl border p-4 ${topPanelClasses}`}>
+        <div className="space-y-1">
+          <p className="text-sm font-semibold">{topPanelTitle}</p>
+          <p className="text-sm">{topPanelBody}</p>
         </div>
-      )}
-      {run.status === 'paused' && (
-        <div className="mt-6 rounded-md border border-green-200 bg-green-50 p-4">
-          <p className="text-sm text-green-700">
-            Étape {currentStep} terminée. La validation débloque seulement l’étape suivante : rien ne repart automatiquement.
-          </p>
-        </div>
-      )}
-      {run.status === 'failed' && (
-        <div className="mt-6 rounded-md border border-destructive bg-destructive/10 p-4">
-          <p className="text-sm text-destructive">
-            Le projet a échoué à l&apos;étape {currentStep}.
-            {run.steps.find(s => s.stepNumber === currentStep)?.error && (
-              <span className="block mt-1 font-mono text-xs">{run.steps.find(s => s.stepNumber === currentStep)?.error}</span>
-            )}
-          </p>
-        </div>
-      )}
-      {run.status === 'completed' && (
-        <div className="mt-6 rounded-md border border-green-200 bg-green-50 p-4">
-          <p className="text-sm text-green-700">
-            Projet terminé — {run.steps.filter(s => s.status === 'completed').length}/{TOTAL_PIPELINE_STEPS} étapes complétées.
-          </p>
-        </div>
-      )}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
+        {validationChecks.length > 0 && (
+          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {validationChecks.map((check) => (
+              <div key={`${check.label}-${check.detail}`} className={`rounded-lg border px-3 py-3 ${CHECK_TONE_CLASSES[check.tone]}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-medium">{check.label}</div>
+                  <span className="text-[11px] font-semibold uppercase tracking-wide">{check.tone}</span>
+                </div>
+                <div className="mt-1 text-sm">{check.detail}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
         <div className="grid gap-4 lg:grid-cols-2">
-          {!isStep2Focus && (
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle>Cockpit projet</CardTitle>
-                <CardDescription>
-                  Vue rapide pour savoir où tu en es et ce qui se passe réellement maintenant.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <div className="rounded-lg border px-3 py-3">
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Statut</div>
-                  <div className={`mt-1 text-sm font-semibold ${getProjectStatusClass(run.status)}`}>
-                    {getProjectStatusLabel(run)}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">{completedSteps}/{TOTAL_PIPELINE_STEPS} étapes terminées</div>
-                </div>
-
-                <div className="rounded-lg border px-3 py-3">
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Étape active</div>
-                  <div className="mt-1 text-sm font-semibold">{getRunStepLabel(run)}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">{getStepActionLabel(currentStep)}</div>
-                </div>
-
-                <div className="rounded-lg border px-3 py-3">
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Santé runtime</div>
-                  <div className="mt-1 text-sm font-semibold">
-                    Heartbeat {run.lastHeartbeat ? formatRelativeTime(run.lastHeartbeat) : '—'}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    Durée étape : {formatStepDuration(currentRunStep)}
-                  </div>
-                </div>
-
-                <div className="rounded-lg border px-3 py-3">
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">LLM étape inspectée</div>
-                  <div className="mt-1 text-sm font-semibold">
-                    {isLlmBackedStep(selectedStep) && selectedStepLlmConfig
-                      ? `${selectedStepLlmConfig.mode} · ${selectedStepLlmConfig.model}`
-                      : 'Aucun LLM sur cette étape'}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    Coût run : {(run.costEur ?? 0).toFixed(2)} €
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card>
+          <Card className={showMeetingPanel ? '' : 'lg:col-span-2'}>
             <CardHeader>
               <CardTitle>Décision maintenant</CardTitle>
               <CardDescription>{selectedGuidance.title}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-                {shouldShowGuidanceMessage && (
-                  <div className={`rounded-md border px-3 py-3 text-sm ${guidanceToneClasses}`}>
-                    {selectedGuidance.body}
-                  </div>
-                )}
+              {shouldShowGuidanceMessage && (
+                <div className={`rounded-md border px-3 py-3 text-sm ${guidanceToneClasses}`}>
+                  {selectedGuidance.body}
+                </div>
+              )}
 
               {isLlmBackedStep(selectedStep) && isCurrentSelection && (
                 <div className="rounded-lg border p-3 space-y-3">
@@ -863,104 +818,7 @@ export default function RunPage() {
             </CardContent>
           </Card>
 
-          {!isStep2Focus && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Repères utiles</CardTitle>
-                <CardDescription>Contexte minimal pour ne pas te perdre entre deux validations.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-                  <span className="text-muted-foreground">Étape inspectée</span>
-                  <span className="font-medium">{selectedStep}/{TOTAL_PIPELINE_STEPS}</span>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-                  <span className="text-muted-foreground">Dernière étape finie</span>
-                  <span className="font-medium">
-                    {latestCompletedStep ? `Étape ${latestCompletedStep.stepNumber}` : 'Aucune'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-                  <span className="text-muted-foreground">Fin dernière activité</span>
-                  <span className="font-medium">
-                    {latestCompletedStep?.completedAt ? formatRelativeTime(latestCompletedStep.completedAt) : '—'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-                  <span className="text-muted-foreground">Traces réunion</span>
-                  <span className="font-medium">{traces.length}</span>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle>Validation avant passage</CardTitle>
-              <CardDescription>
-                Preuves concrètes pour décider si l’étape {selectedStep} mérite validation ou relance.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-3 md:grid-cols-2">
-              {validationChecks.length === 0 ? (
-                <div className="rounded-lg border border-dashed px-3 py-4 text-sm text-muted-foreground">
-                  Pas encore de critères calculés pour cette étape.
-                </div>
-              ) : validationChecks.map((check) => (
-                <div key={`${check.label}-${check.detail}`} className={`rounded-lg border px-3 py-3 ${CHECK_TONE_CLASSES[check.tone]}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="font-medium">{check.label}</div>
-                    <Badge variant={CHECK_BADGE_VARIANT[check.tone]}>{check.tone}</Badge>
-                  </div>
-                  <div className="mt-2 text-sm">{check.detail}</div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Tunnel {TOTAL_PIPELINE_STEPS} étapes</CardTitle>
-            <CardDescription>
-              Tu peux inspecter n’importe quel livrable, sans perdre la main sur le projet actif.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {run.steps.map((step) => {
-              const meta = STEP_EXPECTATIONS[step.stepNumber]
-              const isSelected = step.stepNumber === selectedStep
-              const isCurrent = step.stepNumber === currentStep
-              return (
-                <button
-                  key={step.id}
-                  type="button"
-                    onClick={() => setSelectedStepOverride(step.stepNumber)}
-                  className={`w-full rounded-lg border p-3 text-left transition ${isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-semibold">Étape {step.stepNumber} — {meta?.label ?? step.stepName}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">{meta?.expected ?? step.stepName}</div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-foreground/80">
-                        <span>Action : {getStepActionLabel(step.stepNumber)}</span>
-                        {isCurrent && <span>· étape focale</span>}
-                      </div>
-                    </div>
-                    <Badge variant={step.status === 'completed' ? 'default' : step.status === 'running' ? 'secondary' : step.status === 'failed' ? 'destructive' : 'outline'}>
-                      {STATUS_LABELS[step.status] ?? step.status}
-                    </Badge>
-                  </div>
-                </button>
-              )
-            })}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        {isStep2Focus ? (
-          showMeetingPanel ? (
+          {showMeetingPanel && (
             <Card>
               <CardHeader>
                 <div className="flex items-start justify-between gap-3">
@@ -969,7 +827,7 @@ export default function RunPage() {
                     <CardDescription>
                       {isMeetingRunning
                         ? 'La réunion tourne. Ouvre le studio pour la suivre.'
-                        : 'La réunion existe déjà. Tu peux juste la revoir, l’exporter ou la supprimer.'}
+                        : 'La réunion existe déjà. Tu peux la revoir, l’exporter ou la supprimer.'}
                     </CardDescription>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -1008,17 +866,15 @@ export default function RunPage() {
                 </div>
               </CardContent>
             </Card>
-          ) : null
-        ) : (
-          <Card>
+          )}
+
+          <Card className="lg:col-span-2">
             <CardHeader>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <CardTitle>
-                    Vue contextuelle — Étape {selectedStep} · {currentStepInfo?.label ?? selectedRunStep?.stepName}
-                  </CardTitle>
+                  <CardTitle>Inspecter le livrable</CardTitle>
                   <CardDescription>
-                    {deliverable?.expected ?? currentStepInfo?.expected}
+                    Une seule entrée utile pour l’étape choisie, puis les détails avancés si tu veux creuser.
                   </CardDescription>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -1029,161 +885,155 @@ export default function RunPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent>
-              {loadingDeliverable ? (
-                <div className="rounded-md border bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
-                  Chargement du livrable...
-                </div>
-              ) : contextSections.length === 0 ? (
-                <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
-                  Aucune vue contextuelle disponible pour cette étape.
-                </div>
-              ) : (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {contextSections.map((section) => (
-                    <div key={section.title} className="rounded-lg border p-4">
-                      <div className="text-sm font-semibold">{section.title}</div>
-                      {section.description && (
-                        <div className="mt-1 text-xs text-muted-foreground">{section.description}</div>
-                      )}
-                      {section.body && (
-                        <div className="mt-3 rounded-md bg-muted/40 px-3 py-2 text-sm">{section.body}</div>
-                      )}
-                      {section.items && section.items.length > 0 && (
-                        <div className="mt-3 space-y-2">
-                          {section.items.map((item) => (
-                            <div key={`${section.title}-${item.label}-${item.value}`} className={`rounded-md border px-3 py-2 text-sm ${item.tone ? CHECK_TONE_CLASSES[item.tone] : 'border-border bg-background text-foreground'}`}>
-                              <div className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</div>
-                              <div className="mt-1">{item.value}</div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+            <CardContent className="space-y-3">
+              {deliverable?.pageHref && (
+                <Link href={deliverable.pageHref} className="inline-flex w-full">
+                  <Button variant="outline" className="w-full justify-center">{getStepViewLabel(selectedStep)}</Button>
+                </Link>
+              )}
+
+              {deliverableNotice && (
+                <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  {deliverableNotice}
                 </div>
               )}
-            </CardContent>
-          </Card>
-        )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Inspecter le livrable</CardTitle>
-            <CardDescription>
-              Une seule entrée utile pour l’étape choisie, puis les détails avancés si tu veux creuser.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {deliverable?.pageHref && (
-              <Link href={deliverable.pageHref} className="inline-flex w-full">
-                <Button variant="outline" className="w-full justify-center">{getStepViewLabel(selectedStep)}</Button>
-              </Link>
-            )}
-
-            {deliverableNotice && (
-              <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                {deliverableNotice}
-              </div>
-            )}
-
-            <details className="rounded-lg border p-4">
-              <summary className="cursor-pointer list-none text-sm font-semibold">
-                Source brute / édition avancée
-              </summary>
-              <div className="mt-4 space-y-3">
-                <div className="rounded-md border bg-muted/20 p-3 text-sm">
-                  {deliverable?.summary ?? 'Aucun livrable disponible pour cette étape.'}
-                </div>
-
-                {deliverable?.editable ? (
-                  <div className="space-y-3">
-                    <div className="space-y-1 text-xs text-muted-foreground">
-                      <div>
-                        {selectedStatus === 'running'
-                          ? `Cette étape est en cours. Si le contenu est encore vide, c’est normal : ${getStepActionLabel(selectedStep)} remplit ce livrable automatiquement.`
-                          : 'Édition clavier active pour les utilisateurs avancés.'}
-                      </div>
-                      <div>
-                        Raccourci : <span className="font-mono">⌘/Ctrl + S</span> pour sauvegarder.
-                      </div>
-                    </div>
-                    <textarea
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
-                          e.preventDefault()
-                          void saveDeliverable()
-                        }
-                      }}
-                      placeholder={selectedStatus === 'running'
-                        ? `Étape en cours : ${getStepActionLabel(selectedStep)}. Le contenu apparaîtra ici dès que le système aura fini.`
-                        : `Contenu éditable de l’étape ${selectedStep}.`}
-                      className="min-h-96 w-full rounded-md border bg-background p-3 font-mono text-xs"
-                    />
-                    <div className="flex justify-end">
-                      <Button onClick={saveDeliverable} disabled={savingDeliverable}>
-                        {savingDeliverable ? 'Sauvegarde...' : 'Sauvegarder'}
-                      </Button>
-                    </div>
+              <details className="rounded-lg border p-4">
+                <summary className="cursor-pointer list-none text-sm font-semibold">
+                  Source brute / édition avancée
+                </summary>
+                <div className="mt-4 space-y-3">
+                  <div className="rounded-md border bg-muted/20 p-3 text-sm">
+                    {deliverable?.summary ?? 'Aucun livrable disponible pour cette étape.'}
                   </div>
-                ) : (
-                  <pre className="max-h-108 overflow-auto rounded-md border bg-background p-3 text-xs whitespace-pre-wrap wrap-break-word">
-                    {deliverablePreview || 'Aucun contenu texte à afficher ici. Utilise la vue dédiée pour consulter le livrable.'}
-                  </pre>
-                )}
-              </div>
-            </details>
 
-            <details className="rounded-lg border p-4">
-              <summary className="cursor-pointer list-none text-sm font-semibold">
-                Détails techniques
-              </summary>
-              <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                <div className="space-y-3">
-                  <div className="text-sm font-medium">Étape sélectionnée</div>
-                  <div className="space-y-2 text-sm">
-                    <div className="rounded-md border px-3 py-2">
-                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Provider</div>
-                      <div className="mt-1">{selectedRunStep?.providerUsed ?? '—'}</div>
-                    </div>
-                    <div className="rounded-md border px-3 py-2">
-                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Durée</div>
-                      <div className="mt-1">{formatStepDuration(selectedRunStep)}</div>
-                    </div>
-                    <div className="rounded-md border px-3 py-2">
-                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Erreur</div>
-                      <div className="mt-1 wrap-break-word">{selectedRunStep?.error ?? 'Aucune'}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="text-sm font-medium">Logs failover / providers</div>
-                  {failoverLog.length === 0 ? (
-                    <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
-                      Aucun log technique remonté pour ce projet.
+                  {deliverable?.editable ? (
+                    <div className="space-y-3">
+                      <div className="space-y-1 text-xs text-muted-foreground">
+                        <div>
+                          {selectedStatus === 'running'
+                            ? `Cette étape est en cours. Si le contenu est encore vide, c’est normal : ${getStepActionLabel(selectedStep)} remplit ce livrable automatiquement.`
+                            : 'Édition clavier active pour les utilisateurs avancés.'}
+                        </div>
+                        <div>
+                          Raccourci : <span className="font-mono">⌘/Ctrl + S</span> pour sauvegarder.
+                        </div>
+                      </div>
+                      <textarea
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+                            e.preventDefault()
+                            void saveDeliverable()
+                          }
+                        }}
+                        placeholder={selectedStatus === 'running'
+                          ? `Étape en cours : ${getStepActionLabel(selectedStep)}. Le contenu apparaîtra ici dès que le système aura fini.`
+                          : `Contenu éditable de l’étape ${selectedStep}.`}
+                        className="min-h-96 w-full rounded-md border bg-background p-3 font-mono text-xs"
+                      />
+                      <div className="flex justify-end">
+                        <Button onClick={saveDeliverable} disabled={savingDeliverable}>
+                          {savingDeliverable ? 'Sauvegarde...' : 'Sauvegarder'}
+                        </Button>
+                      </div>
                     </div>
                   ) : (
-                    <div className="space-y-2">
-                      {failoverLog.slice(0, 8).map((entry, index) => {
-                        const summary = summarizeTechnicalLog(entry)
-                        return (
-                          <div key={`${summary.title}-${index}`} className="rounded-md border px-3 py-2 text-sm">
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="font-medium">{summary.title}</div>
-                              <div className="text-xs text-muted-foreground">{formatRelativeTime(entry.timestamp ?? null)}</div>
-                            </div>
-                            <div className="mt-1 text-muted-foreground">{summary.detail}</div>
-                          </div>
-                        )
-                      })}
-                    </div>
+                    <pre className="max-h-108 overflow-auto rounded-md border bg-background p-3 text-xs whitespace-pre-wrap wrap-break-word">
+                      {deliverablePreview || 'Aucun contenu texte à afficher ici. Utilise la vue dédiée pour consulter le livrable.'}
+                    </pre>
                   )}
                 </div>
-              </div>
-            </details>
+              </details>
+
+              <details className="rounded-lg border p-4">
+                <summary className="cursor-pointer list-none text-sm font-semibold">
+                  Détails techniques
+                </summary>
+                <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium">Étape sélectionnée</div>
+                    <div className="space-y-2 text-sm">
+                      <div className="rounded-md border px-3 py-2">
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">Provider</div>
+                        <div className="mt-1">{selectedRunStep?.providerUsed ?? '—'}</div>
+                      </div>
+                      <div className="rounded-md border px-3 py-2">
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">Durée</div>
+                        <div className="mt-1">{formatStepDuration(selectedRunStep)}</div>
+                      </div>
+                      <div className="rounded-md border px-3 py-2">
+                        <div className="text-xs uppercase tracking-wide text-muted-foreground">Erreur</div>
+                        <div className="mt-1 wrap-break-word">{selectedRunStep?.error ?? 'Aucune'}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium">Logs failover / providers</div>
+                    {failoverLog.length === 0 ? (
+                      <div className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">
+                        Aucun log technique remonté pour ce projet.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {failoverLog.slice(0, 8).map((entry, index) => {
+                          const summary = summarizeTechnicalLog(entry)
+                          return (
+                            <div key={`${summary.title}-${index}`} className="rounded-md border px-3 py-2 text-sm">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="font-medium">{summary.title}</div>
+                                <div className="text-xs text-muted-foreground">{formatRelativeTime(entry.timestamp ?? null)}</div>
+                              </div>
+                              <div className="mt-1 text-muted-foreground">{summary.detail}</div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </details>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="xl:sticky xl:top-4">
+          <CardHeader>
+            <CardTitle>Tunnel {TOTAL_PIPELINE_STEPS} étapes</CardTitle>
+            <CardDescription>
+              Tu peux inspecter n’importe quel livrable, sans perdre la main sur le projet actif.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {run.steps.map((step) => {
+              const meta = STEP_EXPECTATIONS[step.stepNumber]
+              const isSelected = step.stepNumber === selectedStep
+              const isCurrent = step.stepNumber === currentStep
+              return (
+                <button
+                  key={step.id}
+                  type="button"
+                  onClick={() => setSelectedStepOverride(step.stepNumber)}
+                  className={`w-full rounded-lg border p-3 text-left transition ${isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">Étape {step.stepNumber} — {meta?.label ?? step.stepName}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">{meta?.expected ?? step.stepName}</div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-foreground/80">
+                        <span>Action : {getStepActionLabel(step.stepNumber)}</span>
+                        {isCurrent && <span>· étape focale</span>}
+                      </div>
+                    </div>
+                    <Badge variant={step.status === 'completed' ? 'default' : step.status === 'running' ? 'secondary' : step.status === 'failed' ? 'destructive' : 'outline'}>
+                      {STATUS_LABELS[step.status] ?? step.status}
+                    </Badge>
+                  </div>
+                </button>
+              )
+            })}
           </CardContent>
         </Card>
       </div>
