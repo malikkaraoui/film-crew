@@ -1,8 +1,31 @@
-export type MeetingLlmMode = 'local' | 'cloud'
+export type LlmMode = 'local' | 'cloud'
+
+export type MeetingLlmMode = LlmMode
+
+export type StepLlmConfig = {
+  mode: LlmMode
+  model: string
+}
+
+export type StepLlmConfigs = Partial<Record<'2' | '3' | '4' | '6', StepLlmConfig>>
+
+export type OutputConfig = {
+  videoCount: number
+  fullVideoDurationS: number
+  sceneDurationS: number
+  sceneCount: number
+}
+
+export type ReferenceImageConfig = {
+  urls: string[]
+}
 
 export type ProjectConfig = {
   meetingLlmMode: MeetingLlmMode
   meetingLlmModel: string
+  stepLlmConfigs?: StepLlmConfigs
+  outputConfig?: OutputConfig | null
+  referenceImages?: ReferenceImageConfig | null
 }
 
 export type Run = {

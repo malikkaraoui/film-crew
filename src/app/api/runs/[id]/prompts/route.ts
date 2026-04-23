@@ -43,8 +43,20 @@ export async function GET(
 
     return NextResponse.json({ data: { prompts } })
   } catch (e) {
+    const message = (e as Error).message
+    if (/ENOENT|no such file or directory/i.test(message)) {
+      return NextResponse.json({
+        data: {
+          prompts: [],
+        },
+        meta: {
+          reason: 'prompts.json absent — étape 6 non encore terminée ou relance en cours',
+        },
+      })
+    }
+
     return NextResponse.json(
-      { error: { code: 'PROMPTS_ERROR', message: (e as Error).message } },
+      { error: { code: 'PROMPTS_ERROR', message } },
       { status: 500 },
     )
   }

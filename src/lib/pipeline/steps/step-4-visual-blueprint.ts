@@ -12,12 +12,18 @@ import {
   type StructuredStoryDocument,
 } from '@/lib/storyboard/blueprint'
 import { logger } from '@/lib/logger'
+import { getStepLlmConfig, readProjectConfig } from '@/lib/runs/project-config'
+import { resolveLlmTarget } from '@/lib/llm/target'
 
 export const step4VisualBlueprint: PipelineStep = {
   name: 'Blueprint visuel',
   stepNumber: 4,
 
   async execute(ctx: StepContext): Promise<StepResult> {
+    const projectConfig = await readProjectConfig(ctx.storagePath)
+    const llmConfig = getStepLlmConfig(projectConfig, 4)
+    const llmTarget = resolveLlmTarget(llmConfig?.mode ?? 'cloud', llmConfig?.model)
+
     let structure: StructuredStoryDocument
     try {
       const raw = await readFile(join(ctx.storagePath, 'structure.json'), 'utf-8')
@@ -69,7 +75,13 @@ export const step4VisualBlueprint: PipelineStep = {
               { role: 'system', content: buildSystemPrompt() },
               { role: 'user', content: buildUserPrompt(ctx.idea, structure, brief, directorPlan) },
             ],
-            { temperature: 0.3, maxTokens: 3200 },
+            {
+              temperature: 0.3,
+              maxTokens: 3200,
+              model: llmTarget.model,
+              host: llmTarget.host,
+              headers: llmTarget.headers,
+            },
           )
         },
         ctx.runId,
@@ -112,6 +124,7 @@ export const step4VisualBlueprint: PipelineStep = {
         outputData: {
           sceneCount: blueprint.scenes.length,
           source,
+          llm: { mode: llmTarget.mode, model: llmTarget.model },
           providerUsed,
           failoverOccurred,
           creativeDirection: blueprint.creativeDirection,
@@ -146,6 +159,7 @@ export const step4VisualBlueprint: PipelineStep = {
       outputData: {
         sceneCount: blueprint.scenes.length,
         source: blueprint.source,
+        llm: { mode: llmTarget.mode, model: llmTarget.model },
         providerUsed: blueprint.providerUsed,
         failoverOccurred: blueprint.failoverOccurred,
         creativeDirection: blueprint.creativeDirection,

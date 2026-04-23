@@ -24,8 +24,15 @@ type CostEstimate = {
   warning: string | null
 }
 
+type UploadedReferenceImage = {
+  url: string
+  fileName: string
+}
+
 const DEFAULT_LOCAL_MODEL = 'mistral:latest'
-const DEFAULT_CLOUD_MODEL = 'gemma4:31b-cloud'
+const DEFAULT_CLOUD_MODEL = 'deepseek-v3.1:671b-cloud'
+const DEFAULT_FULL_VIDEO_DURATION_S = 60
+const LOCKED_SCENE_DURATION_S = 10
 
 function NewRunForm() {
   const router = useRouter()
@@ -41,9 +48,17 @@ function NewRunForm() {
   const [templateId, setTemplateId] = useState('')
   const [meetingMode, setMeetingMode] = useState<MeetingLlmMode>('local')
   const [localModels, setLocalModels] = useState<string[]>([])
+  const [cloudModels, setCloudModels] = useState<string[]>([])
   const [localModelsError, setLocalModelsError] = useState('')
   const [meetingLocalModel, setMeetingLocalModel] = useState(DEFAULT_LOCAL_MODEL)
   const [meetingCloudModel, setMeetingCloudModel] = useState(DEFAULT_CLOUD_MODEL)
+  const [outputVideoCount, setOutputVideoCount] = useState(1)
+  const [fullVideoDurationS, setFullVideoDurationS] = useState(DEFAULT_FULL_VIDEO_DURATION_S)
+  const [referenceImageUrl1, setReferenceImageUrl1] = useState('')
+  const [referenceImageUrl2, setReferenceImageUrl2] = useState('')
+  const [uploadedReferenceImage1, setUploadedReferenceImage1] = useState<UploadedReferenceImage | null>(null)
+  const [uploadedReferenceImage2, setUploadedReferenceImage2] = useState<UploadedReferenceImage | null>(null)
+  const [uploadingReferenceSlot, setUploadingReferenceSlot] = useState<1 | 2 | null>(null)
 
   // Questionnaire adaptatif
   const [showQuestionnaire, setShowQuestionnaire] = useState(false)
@@ -79,15 +94,20 @@ function NewRunForm() {
         if (json.data) setTemplates(json.data)
       })
 
-    fetch('/api/test/ollama-models')
+    fetch('/api/llm/models')
       .then((r) => r.json())
       .then((json) => {
-        const models = Array.isArray(json.models) ? json.models as string[] : []
+        const models = Array.isArray(json.data?.localModels) ? json.data.localModels as string[] : []
+        const cloud = Array.isArray(json.data?.cloudModels) ? json.data.cloudModels as string[] : []
         setLocalModels(models)
+        setCloudModels(cloud)
         if (models.length > 0) {
           setMeetingLocalModel((current) => models.includes(current) ? current : models[0])
         }
-        if (json.error) setLocalModelsError(json.error)
+        if (cloud.length > 0) {
+          setMeetingCloudModel((current) => cloud.includes(current) ? current : cloud[0])
+        }
+        if (json.data?.localError) setLocalModelsError(json.data.localError)
       })
       .catch(() => {
         setLocalModelsError('Impossible de lister les modèles Ollama locaux')
@@ -103,9 +123,62 @@ function NewRunForm() {
   const selectedMeetingModel = meetingMode === 'cloud'
     ? meetingCloudModel.trim()
     : meetingLocalModel.trim()
+  const derivedSceneCount = Math.max(1, Math.ceil(fullVideoDurationS / LOCKED_SCENE_DURATION_S))
+  const durationMismatch = fullVideoDurationS % LOCKED_SCENE_DURATION_S !== 0
+  const referenceImageUrls = [
+    uploadedReferenceImage1?.url || referenceImageUrl1.trim(),
+    uploadedReferenceImage2?.url || referenceImageUrl2.trim(),
+  ].filter(Boolean)
+
+  async function uploadReferenceImage(slot: 1 | 2, file: File | null) {
+    if (!file) return
+
+    setUploadingReferenceSlot(slot)
+    setError('')
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch('/api/reference-images', {
+        method: 'POST',
+        body: formData,
+      })
+      const json = await res.json()
+
+      if (!res.ok) {
+        setError(json.error?.message ?? 'Upload image impossible')
+        return
+      }
+
+      const uploaded = json.data as UploadedReferenceImage
+      if (slot === 1) {
+        setUploadedReferenceImage1(uploaded)
+        setReferenceImageUrl1('')
+      } else {
+        setUploadedReferenceImage2(uploaded)
+        setReferenceImageUrl2('')
+      }
+    } catch (uploadError) {
+      setError((uploadError as Error).message)
+    } finally {
+      setUploadingReferenceSlot(null)
+    }
+  }
+
+  function clearReferenceImage(slot: 1 | 2) {
+    if (slot === 1) {
+      setUploadedReferenceImage1(null)
+      setReferenceImageUrl1('')
+      return
+    }
+
+    setUploadedReferenceImage2(null)
+    setReferenceImageUrl2('')
+  }
 
   async function handleLaunch() {
-    if (!chainId || !idea.trim()) return
+    if (!chainId || !idea.trim() || durationMismatch) return
     setLaunching(true)
     setError('')
 
@@ -116,6 +189,14 @@ function NewRunForm() {
       autoStart: false,
       meetingLlmMode: meetingMode,
       meetingLlmModel: selectedMeetingModel,
+      outputConfig: {
+        videoCount: outputVideoCount,
+        fullVideoDurationS,
+        sceneDurationS: LOCKED_SCENE_DURATION_S,
+      },
+      referenceImages: {
+        urls: referenceImageUrls,
+      },
     }
 
     if (showQuestionnaire && answeredCount > 0) {
@@ -169,6 +250,136 @@ function NewRunForm() {
 
         <Card>
           <CardHeader className="py-3">
+            <CardTitle className="text-sm font-medium">Sortie verrouillée</CardTitle>
+            <div className="space-y-3 text-sm">
+              <div>
+                <Label htmlFor="output-video-count">Nombre de vidéos prévues en sortie</Label>
+                <Input
+                  id="output-video-count"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={outputVideoCount}
+                  onChange={(e) => setOutputVideoCount(Math.max(1, Number.parseInt(e.target.value || '1', 10) || 1))}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="full-video-duration">Vidéo entière à préparer dans ce run (secondes)</Label>
+                <Input
+                  id="full-video-duration"
+                  type="number"
+                  min={LOCKED_SCENE_DURATION_S}
+                  step={LOCKED_SCENE_DURATION_S}
+                  value={fullVideoDurationS}
+                  onChange={(e) => setFullVideoDurationS(Math.max(LOCKED_SCENE_DURATION_S, Number.parseInt(e.target.value || `${DEFAULT_FULL_VIDEO_DURATION_S}`, 10) || DEFAULT_FULL_VIDEO_DURATION_S))}
+                />
+              </div>
+
+              <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground space-y-1">
+                <p>Durée par scène verrouillée : <strong>{LOCKED_SCENE_DURATION_S}s</strong>.</p>
+                <p>Réunion + storyboard + prompts à produire pour la vidéo entière : <strong>{derivedSceneCount} scène(s)</strong>.</p>
+                <p>Sortie prévue au global : <strong>{outputVideoCount} vidéo(s)</strong>. Ce run verrouille d’abord la vidéo maîtresse complète.</p>
+              </div>
+
+              {durationMismatch && (
+                <div className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  La durée totale doit être un multiple exact de {LOCKED_SCENE_DURATION_S}s.
+                </div>
+              )}
+            </div>
+          </CardHeader>
+        </Card>
+
+        <Card>
+          <CardHeader className="py-3">
+            <CardTitle className="text-sm font-medium">Références visuelles projet</CardTitle>
+            <div className="space-y-3 text-sm">
+              <div>
+                <Label htmlFor="reference-image-url-1">URL image de référence 1</Label>
+                <Input
+                  id="reference-image-url-1"
+                  type="url"
+                  value={referenceImageUrl1}
+                  onChange={(e) => {
+                    setUploadedReferenceImage1(null)
+                    setReferenceImageUrl1(e.target.value)
+                  }}
+                  placeholder="https://.../reference-1.jpg"
+                />
+                <div className="mt-2 flex items-center gap-2">
+                  <Input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null
+                      void uploadReferenceImage(1, file)
+                      e.currentTarget.value = ''
+                    }}
+                  />
+                  {(uploadedReferenceImage1 || referenceImageUrl1.trim()) && (
+                    <Button type="button" variant="outline" onClick={() => clearReferenceImage(1)}>
+                      Effacer
+                    </Button>
+                  )}
+                </div>
+                {uploadedReferenceImage1 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Fichier uploadé : {uploadedReferenceImage1.fileName}
+                  </p>
+                )}
+              </div>
+              <div>
+                <Label htmlFor="reference-image-url-2">URL image de référence 2</Label>
+                <Input
+                  id="reference-image-url-2"
+                  type="url"
+                  value={referenceImageUrl2}
+                  onChange={(e) => {
+                    setUploadedReferenceImage2(null)
+                    setReferenceImageUrl2(e.target.value)
+                  }}
+                  placeholder="https://.../reference-2.jpg"
+                />
+                <div className="mt-2 flex items-center gap-2">
+                  <Input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null
+                      void uploadReferenceImage(2, file)
+                      e.currentTarget.value = ''
+                    }}
+                  />
+                  {(uploadedReferenceImage2 || referenceImageUrl2.trim()) && (
+                    <Button type="button" variant="outline" onClick={() => clearReferenceImage(2)}>
+                      Effacer
+                    </Button>
+                  )}
+                </div>
+                {uploadedReferenceImage2 && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Fichier uploadé : {uploadedReferenceImage2.fileName}
+                  </p>
+                )}
+              </div>
+              <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground space-y-1">
+                <p>2 références maximum au total, une par slot : URL ou upload PNG/JPG/WEBP.</p>
+                <p>Si HappyHorse est utilisé, elles seront envoyées dans <strong>image_urls</strong> avec chaque prompt scène par scène.</p>
+                <p>En local `localhost`, elles finiront bien dans la requête, mais HappyHorse ne pourra les récupérer que si ces URLs sont publiquement accessibles.</p>
+                <p>Tu peux aussi laisser vide pour rester en texte-vers-vidéo pur.</p>
+              </div>
+              {uploadingReferenceSlot && (
+                <div className="rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                  Upload image {uploadingReferenceSlot} en cours...
+                </div>
+              )}
+            </div>
+          </CardHeader>
+        </Card>
+
+        <Card>
+          <CardHeader className="py-3">
             <CardTitle className="text-sm font-medium">Réunion LLM</CardTitle>
             <div className="space-y-3 text-sm">
               <div>
@@ -215,12 +426,30 @@ function NewRunForm() {
               ) : (
                 <div>
                   <Label htmlFor="meeting-cloud-model">Modèle cloud</Label>
-                  <Input
-                    id="meeting-cloud-model"
-                    value={meetingCloudModel}
-                    onChange={(e) => setMeetingCloudModel(e.target.value)}
-                    placeholder="gemma4:31b-cloud"
-                  />
+                  {cloudModels.length > 0 ? (
+                    <select
+                      id="meeting-cloud-model"
+                      value={meetingCloudModel}
+                      onChange={(e) => setMeetingCloudModel(e.target.value)}
+                      className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                    >
+                      {cloudModels.map((model) => (
+                        <option key={model} value={model}>{model}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      id="meeting-cloud-model"
+                      value={meetingCloudModel}
+                      onChange={(e) => setMeetingCloudModel(e.target.value)}
+                      placeholder="deepseek-v3.1:671b-cloud"
+                    />
+                  )}
+                  {cloudModels.length > 0 && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Cloud dispo : {cloudModels.join(' · ')}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -376,7 +605,7 @@ function NewRunForm() {
           </div>
         )}
 
-        <Button onClick={handleLaunch} disabled={launching || !chainId || !idea.trim() || !selectedMeetingModel}>
+        <Button onClick={handleLaunch} disabled={launching || !chainId || !idea.trim() || !selectedMeetingModel || durationMismatch}>
           {launching ? 'Création...' : 'Créer le projet'}
         </Button>
       </div>

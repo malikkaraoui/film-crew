@@ -1,7 +1,7 @@
 import { join } from 'path'
 import { readFile, writeFile } from 'fs/promises'
 import { MeetingCoordinator } from '@/lib/agents/coordinator'
-import { readProjectConfig } from '@/lib/runs/project-config'
+import { getStepLlmConfig, readProjectConfig } from '@/lib/runs/project-config'
 import type { PipelineStep, StepContext, StepResult } from '../types'
 
 export const step2Brainstorm: PipelineStep = {
@@ -19,14 +19,17 @@ export const step2Brainstorm: PipelineStep = {
     }
 
     const projectConfig = await readProjectConfig(ctx.storagePath)
+    const stepLlmConfig = getStepLlmConfig(projectConfig, 2)
 
     const coordinator = new MeetingCoordinator({
       runId: ctx.runId,
       idea: ctx.idea,
       brandKit,
       template: ctx.template,
-      meetingLlmMode: projectConfig?.meetingLlmMode,
-      meetingLlmModel: projectConfig?.meetingLlmModel,
+      referenceImages: projectConfig?.referenceImages ?? null,
+      meetingLlmMode: stepLlmConfig?.mode ?? projectConfig?.meetingLlmMode,
+      meetingLlmModel: stepLlmConfig?.model ?? projectConfig?.meetingLlmModel,
+      outputConfig: projectConfig?.outputConfig ?? null,
     })
 
     const brief = await coordinator.runMeeting()

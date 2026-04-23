@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { VideoRequestPreflightPanel } from '@/components/video/video-request-preflight-panel'
+import { translatePromptText } from '@/lib/client/prompt-translation'
 
 type Clip = {
   id: string
@@ -59,6 +61,7 @@ export default function PromptsPage() {
   const [regenerating, setRegenerating] = useState<Record<number, boolean>>({})
   const [notices, setNotices] = useState<Record<number, { tone: 'success' | 'error'; message: string }>>({})
   const [storyboardAssetVersion, setStoryboardAssetVersion] = useState('0')
+  const [translating, setTranslating] = useState<Record<number, 'fr-en' | 'en-fr' | null>>({})
 
   const loadStoryboard = useCallback(async () => {
     try {
@@ -191,6 +194,43 @@ export default function PromptsPage() {
     }
   }
 
+  async function handleTranslatePrompt(sceneIndex: number, from: 'fr' | 'en', to: 'fr' | 'en') {
+    const draft = promptDrafts[sceneIndex]
+    if (!draft?.prompt.trim()) return
+
+    const key: 'fr-en' | 'en-fr' = from === 'fr' ? 'fr-en' : 'en-fr'
+    setTranslating((prev) => ({ ...prev, [sceneIndex]: key }))
+    setNotices((prev) => ({ ...prev, [sceneIndex]: { tone: 'success', message: '' } }))
+
+    try {
+      const result = await translatePromptText(draft.prompt, { from, to })
+      setPromptDrafts((prev) => ({
+        ...prev,
+        [sceneIndex]: {
+          prompt: result.text,
+          negativePrompt: prev[sceneIndex]?.negativePrompt ?? draft.negativePrompt,
+        },
+      }))
+      setNotices((prev) => ({
+        ...prev,
+        [sceneIndex]: {
+          tone: 'success',
+          message: `Traduction prête via ${result.provider} · ${result.mode} · ${result.model}`,
+        },
+      }))
+    } catch (error) {
+      setNotices((prev) => ({
+        ...prev,
+        [sceneIndex]: {
+          tone: 'error',
+          message: (error as Error).message,
+        },
+      }))
+    } finally {
+      setTranslating((prev) => ({ ...prev, [sceneIndex]: null }))
+    }
+  }
+
   if (loading) return <p className="text-sm text-muted-foreground">Chargement...</p>
 
   const sceneIndexes = Array.from(
@@ -257,6 +297,8 @@ export default function PromptsPage() {
         </Card>
       </div>
 
+      <VideoRequestPreflightPanel runId={id} />
+
       <div className="grid gap-4 xl:grid-cols-2">
         {promptScenes.map(({ sceneIndex, storyboardImage, clip, draft }) => {
           const notice = notices[sceneIndex]
@@ -302,7 +344,31 @@ export default function PromptsPage() {
 
                   <div className="space-y-3">
                     <div className="space-y-1.5">
-                      <label className="text-xs font-medium text-muted-foreground">Prompt vidéo</label>
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <label className="text-xs font-medium text-muted-foreground">Prompt vidéo</label>
+                        <div className="flex gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-[10px]"
+                            onClick={() => handleTranslatePrompt(sceneIndex, 'fr', 'en')}
+                            disabled={Boolean(translating[sceneIndex]) || !draft.prompt.trim()}
+                          >
+                            {translating[sceneIndex] === 'fr-en' ? 'Traduction...' : 'FR → EN'}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-[10px]"
+                            onClick={() => handleTranslatePrompt(sceneIndex, 'en', 'fr')}
+                            disabled={Boolean(translating[sceneIndex]) || !draft.prompt.trim()}
+                          >
+                            {translating[sceneIndex] === 'en-fr' ? 'Traduction...' : 'EN → FR'}
+                          </Button>
+                        </div>
+                      </div>
                       <textarea
                         value={draft.prompt}
                         onChange={(e) => setPromptDrafts((prev) => ({

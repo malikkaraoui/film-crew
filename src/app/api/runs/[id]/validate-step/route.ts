@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { FINAL_PIPELINE_STEP } from '@/lib/pipeline/constants'
 import { getRunById, getRunSteps, updateRunStatus } from '@/lib/db/queries/runs'
+import { syncStep2MeetingState } from '@/lib/runs/meeting-sync'
 
 export async function POST(
   _request: Request,
@@ -8,6 +9,7 @@ export async function POST(
 ) {
   try {
     const { id } = await params
+    await syncStep2MeetingState(id)
     const run = await getRunById(id)
 
     if (!run) {

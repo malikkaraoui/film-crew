@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { PublishPanel } from '@/components/publish/publish-panel'
+import { VideoRequestPreflightPanel } from '@/components/video/video-request-preflight-panel'
 import type { PublishContext } from '@/components/publish/publish-panel'
 
 type Clip = {
@@ -369,6 +370,8 @@ export default function PreviewPage() {
         </div>
       )}
 
+      <VideoRequestPreflightPanel runId={id} />
+
       {/* Player vidéo ou animatic */}
       {hasPlayable && (
         <div className="space-y-2">
@@ -510,15 +513,15 @@ export default function PreviewPage() {
       {promptScenes.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-medium">Prompts vidéo — {promptScenes.length} scène(s)</h2>
-          <div className="flex gap-2 overflow-x-auto pb-2">
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {promptScenes.map(({ sceneIndex, storyboardImage, clip }) => (
-              <div key={clip?.id ?? `prompt-${sceneIndex}`} className="shrink-0 w-44 rounded-lg border p-2 space-y-2">
-                <div className="aspect-9/16 rounded bg-muted flex items-center justify-center">
+              <div key={clip?.id ?? `prompt-${sceneIndex}`} className="rounded-lg border p-3 space-y-3">
+                <div className="aspect-video rounded bg-muted flex items-center justify-center">
                   <span className="text-xs font-mono text-muted-foreground">S{sceneIndex}</span>
                 </div>
                 <Badge
                   variant={clip?.status === 'completed' ? 'default' : clip ? 'destructive' : 'secondary'}
-                  className="text-[9px] w-full justify-center"
+                  className="text-[10px] w-full justify-center"
                 >
                   {clip?.status === 'completed'
                     ? 'Clip généré'
@@ -527,13 +530,13 @@ export default function PreviewPage() {
                     : 'Clip non généré'}
                 </Badge>
                 {clip?.provider && clip.provider !== 'video' && (
-                  <p className="text-[9px] text-muted-foreground text-center">{clip.provider}</p>
+                  <p className="text-[10px] text-muted-foreground text-center">{clip.provider}</p>
                 )}
-                <p className="text-[10px] text-muted-foreground line-clamp-3">
+                <p className="text-xs text-muted-foreground line-clamp-4">
                   {storyboardImage?.description ?? 'Aucune description storyboard disponible pour cette scène.'}
                 </p>
-                <div className="space-y-1">
-                  <p className="text-[10px] font-medium text-foreground">Prompt vidéo</p>
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-foreground">Prompt vidéo</p>
                   <textarea
                     value={promptDrafts[sceneIndex]?.prompt ?? clip?.prompt ?? ''}
                     onChange={(e) => setPromptDrafts((prev) => ({
@@ -543,9 +546,9 @@ export default function PreviewPage() {
                         negativePrompt: prev[sceneIndex]?.negativePrompt ?? clip?.negativePrompt ?? '',
                       },
                     }))}
-                    className="min-h-20 w-full rounded-md border bg-background px-1.5 py-1 text-[10px]"
+                    className="min-h-32 w-full rounded-md border bg-background px-2 py-2 text-xs"
                   />
-                  <p className="text-[10px] font-medium text-foreground">Negative prompt</p>
+                  <p className="text-xs font-medium text-foreground">Negative prompt</p>
                   <textarea
                     value={promptDrafts[sceneIndex]?.negativePrompt ?? clip?.negativePrompt ?? ''}
                     onChange={(e) => setPromptDrafts((prev) => ({
@@ -556,12 +559,12 @@ export default function PreviewPage() {
                       },
                     }))}
                     placeholder="Negative prompt"
-                    className="min-h-14 w-full rounded-md border bg-background px-1.5 py-1 text-[10px] text-muted-foreground"
+                    className="min-h-24 w-full rounded-md border bg-background px-2 py-2 text-xs text-muted-foreground"
                   />
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="w-full text-[10px] h-6"
+                    className="w-full text-xs h-8"
                     onClick={() => savePrompt(sceneIndex)}
                     disabled={!(promptDrafts[sceneIndex]?.prompt ?? clip?.prompt ?? '').trim()}
                   >
@@ -571,7 +574,7 @@ export default function PreviewPage() {
                 {regenResult[sceneIndex] && (
                   <Badge
                     variant={regenResult[sceneIndex].ok ? 'default' : 'destructive'}
-                    className="text-[9px] w-full justify-center"
+                    className="text-[10px] w-full justify-center"
                   >
                     {regenResult[sceneIndex].ok
                       ? `✓ ${regenResult[sceneIndex].provider}${regenResult[sceneIndex].failover ? ' (basculé)' : ''}`
@@ -581,7 +584,7 @@ export default function PreviewPage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="w-full text-[10px] h-6"
+                  className="w-full text-xs h-8"
                   onClick={() => handleRegenerate('video', sceneIndex)}
                   disabled={regenerating[sceneIndex] ?? false}
                 >

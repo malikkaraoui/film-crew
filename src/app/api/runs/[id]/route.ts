@@ -4,10 +4,21 @@ import { rm } from 'fs/promises'
 import { join } from 'path'
 import { logger } from '@/lib/logger'
 import { readProjectConfig } from '@/lib/runs/project-config'
+import { syncStep2MeetingState } from '@/lib/runs/meeting-sync'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
+    const existingRun = await getRunById(id)
+    if (!existingRun) {
+      return NextResponse.json(
+        { error: { code: 'NOT_FOUND', message: 'Run introuvable' } },
+        { status: 404 }
+      )
+    }
+
+    await syncStep2MeetingState(id)
+
     const r = await getRunById(id)
     if (!r) {
       return NextResponse.json(
@@ -15,6 +26,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
         { status: 404 }
       )
     }
+
     const steps = await getRunSteps(id)
     const storagePath = join(process.cwd(), 'storage', 'runs', id)
     const projectConfig = await readProjectConfig(storagePath)

@@ -46,6 +46,7 @@ export type VideoOpts = {
   aspectRatio?: string
   seed?: number
   audioRef?: string
+  referenceImageUrls?: string[]
   outputDir?: string
   onProgress?: (event: VideoProgressEvent) => void | Promise<void>
 }

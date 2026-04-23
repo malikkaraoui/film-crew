@@ -6,6 +6,7 @@ import { clip } from '@/lib/db/schema'
 import type { VideoProvider, TTSProvider } from '@/lib/providers/types'
 import { logger } from '@/lib/logger'
 import type { PipelineStep, StepContext, StepResult } from '../types'
+import { readProjectConfig } from '@/lib/runs/project-config'
 
 type PromptEntry = {
   sceneIndex: number
@@ -18,6 +19,9 @@ export const step6Generation: PipelineStep = {
   stepNumber: 7,
 
   async execute(ctx: StepContext): Promise<StepResult> {
+    const projectConfig = await readProjectConfig(ctx.storagePath)
+    const referenceImageUrls = projectConfig?.referenceImages?.urls ?? []
+
     // Lire les prompts
     let promptData: { prompts: PromptEntry[] }
     try {
@@ -53,6 +57,7 @@ export const step6Generation: PipelineStep = {
               resolution: '720p',
               duration: 10,
               aspectRatio: '9:16',
+              referenceImageUrls,
               outputDir: clipsDir,
             })
           },

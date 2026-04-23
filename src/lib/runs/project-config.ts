@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
-import type { LlmMode, ProjectConfig, StepLlmConfig, StepLlmConfigs } from '@/types/run'
+import type { LlmMode, OutputConfig, ProjectConfig, ReferenceImageConfig, StepLlmConfig, StepLlmConfigs } from '@/types/run'
 import {
   DEFAULT_CLOUD_LLM_MODEL,
   DEFAULT_LOCAL_LLM_MODEL,
@@ -10,6 +10,43 @@ import {
 
 const LLM_STEP_KEYS = ['2', '3', '4', '6'] as const
 type LlmStepKey = typeof LLM_STEP_KEYS[number]
+const DEFAULT_SCENE_DURATION_S = 10
+
+function toPositiveInt(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.round(value)
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number.parseInt(value.replace(/[^0-9]/g, ''), 10)
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+  }
+  return fallback
+}
+
+function normalizeOutputConfig(input?: Partial<OutputConfig> | null): OutputConfig | null {
+  if (!input) return null
+
+  const videoCount = toPositiveInt(input.videoCount, 1)
+  const fullVideoDurationS = toPositiveInt(input.fullVideoDurationS, 60)
+  const sceneDurationS = toPositiveInt(input.sceneDurationS, DEFAULT_SCENE_DURATION_S)
+
+  return {
+    videoCount,
+    fullVideoDurationS,
+    sceneDurationS,
+    sceneCount: Math.max(1, Math.ceil(fullVideoDurationS / sceneDurationS)),
+  }
+}
+
+function normalizeReferenceImages(input?: Partial<ReferenceImageConfig> | null): ReferenceImageConfig | null {
+  const urls = Array.isArray(input?.urls)
+    ? input.urls
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .slice(0, 2)
+    : []
+
+  return urls.length > 0 ? { urls } : null
+}
 
 export const DEFAULT_LOCAL_MEETING_MODEL = DEFAULT_LOCAL_LLM_MODEL
 export const DEFAULT_CLOUD_MEETING_MODEL = DEFAULT_CLOUD_LLM_MODEL
@@ -96,6 +133,8 @@ export function buildProjectConfig(input?: Partial<ProjectConfig> | null): Proje
     meetingLlmMode: step2.mode,
     meetingLlmModel: step2.model,
     stepLlmConfigs,
+    outputConfig: normalizeOutputConfig(input?.outputConfig),
+    referenceImages: normalizeReferenceImages(input?.referenceImages),
   }
 }
 

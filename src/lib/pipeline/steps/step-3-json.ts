@@ -5,6 +5,9 @@ import type { LLMProvider } from '@/lib/providers/types'
 import type { MeetingBrief, MeetingSceneOutlineItem } from '@/types/agent'
 import type { PipelineStep, StepContext, StepResult } from '../types'
 import { logger } from '@/lib/logger'
+import { getStepLlmConfig, readProjectConfig } from '@/lib/runs/project-config'
+import { resolveLlmTarget } from '@/lib/llm/target'
+import type { OutputConfig } from '@/types/run'
 
 export type DirectorPlan = {
   runId: string
@@ -52,6 +55,20 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? value as Record<string, unknown> : {}
 }
 
+function applyOutputConfigLock(payload: Record<string, unknown>, outputConfig: OutputConfig | null | undefined): Record<string, unknown> {
+  if (!outputConfig) return payload
+
+  const rawScenes = Array.isArray(payload.scenes) ? payload.scenes.map(asRecord) : []
+  return {
+    ...payload,
+    scenes: rawScenes.map((scene) => ({
+      ...scene,
+      duration_s: outputConfig.sceneDurationS,
+    })),
+    target_duration_s: outputConfig.fullVideoDurationS,
+  }
+}
+
 function buildSceneFromOutline(
   outline: MeetingSceneOutlineItem,
   candidate?: Record<string, unknown>,
@@ -95,6 +112,11 @@ export const step3Json: PipelineStep = {
   stepNumber: 3,
 
   async execute(ctx: StepContext): Promise<StepResult> {
+    const projectConfig = await readProjectConfig(ctx.storagePath)
+    const llmConfig = getStepLlmConfig(projectConfig, 3)
+    const llmTarget = resolveLlmTarget(llmConfig?.mode ?? 'local', llmConfig?.model)
+    const outputConfig = projectConfig?.outputConfig ?? null
+
     // Lire le brief produit par la réunion d'agents (step 2)
     let briefContent: string | null = null
     let brief: MeetingBrief | null = null
@@ -109,12 +131,15 @@ export const step3Json: PipelineStep = {
 
     // Construire le prompt utilisateur à partir du brief ou fallback sur l'idée brute
     const userContent = briefContent
-      ? `Brief de la réunion de production :\n\n${briefContent}\n\n${sceneOutline.length > 0 ? `Découpage canonique scene par scene issu du brief (obligatoire, a reprendre 1:1 sans fusion, sans suppression, sans reordering) :\n${JSON.stringify(sceneOutline, null, 2)}\n\n` : ''}Transforme ce brief en JSON structuré pour la production. L'étape 3 vient en complément du brief : elle le rend canonique et exploitable, elle ne le simplifie pas.`
-      : `[FALLBACK — brief absent, idée brute uniquement]\n\nIdée : ${ctx.idea}\n\nTransforme en JSON structuré pour la production.`
+      ? `Brief de la réunion de production :\n\n${briefContent}\n\n${sceneOutline.length > 0 ? `Découpage canonique scene par scene issu du brief (obligatoire, a reprendre 1:1 sans fusion, sans suppression, sans reordering) :\n${JSON.stringify(sceneOutline, null, 2)}\n\n` : ''}${outputConfig ? `Cadre verrouillé : vidéo entière ${outputConfig.fullVideoDurationS}s, ${outputConfig.sceneCount} scènes obligatoires, ${outputConfig.sceneDurationS}s par scène.\n\n` : ''}Transforme ce brief en JSON structuré pour la production. L'étape 3 vient en complément du brief : elle le rend canonique et exploitable, elle ne le simplifie pas.`
+      : `[FALLBACK — brief absent, idée brute uniquement]\n\nIdée : ${ctx.idea}\n\n${outputConfig ? `Cadre verrouillé : vidéo entière ${outputConfig.fullVideoDurationS}s, ${outputConfig.sceneCount} scènes obligatoires, ${outputConfig.sceneDurationS}s par scène.\n\n` : ''}Transforme en JSON structuré pour la production.`
 
     // Contexte template injecté dans le system prompt (10D)
     const templateContext = ctx.template
       ? `\n\nTemplate de style imposé : ${ctx.template.name} — ${ctx.template.description}\nStyle : ${ctx.template.style} | Rythme : ${ctx.template.rhythm}\nTransitions recommandées : ${ctx.template.transitions.join(', ')}\nAdapte le nombre de scènes, leur durée et leur rythme en conséquence.`
+      : ''
+    const outputLockContext = outputConfig
+      ? `\n\nCadre verrouillé de production :\n- vidéo entière = ${outputConfig.fullVideoDurationS}s\n- scènes obligatoires = ${outputConfig.sceneCount}\n- durée par scène = ${outputConfig.sceneDurationS}s\n- target_duration_s doit être ${outputConfig.fullVideoDurationS}`
       : ''
 
     const { result } = await executeWithFailover(
@@ -148,14 +173,20 @@ Règles importantes :
 - si le brief contient déjà un découpage scène par scène, reprends exactement ce nombre de scènes et le même ordre
 - l'étape 3 complète le brief, elle ne le résume pas
 - chaque scène doit rester fidèle au brief tout en devenant exploitable en production
-Retourne UNIQUEMENT le JSON, sans markdown ni explication.${templateContext}`,
+Retourne UNIQUEMENT le JSON, sans markdown ni explication.${templateContext}${outputLockContext}`,
             },
             {
               role: 'user',
               content: userContent,
             },
           ],
-          { temperature: 0.5, maxTokens: 2048 },
+          {
+            temperature: 0.5,
+            maxTokens: 2048,
+            model: llmTarget.model,
+            host: llmTarget.host,
+            headers: llmTarget.headers,
+          },
         )
       },
       ctx.runId,
@@ -185,6 +216,7 @@ Retourne UNIQUEMENT le JSON, sans markdown ni explication.${templateContext}`,
 
     const rawSceneCount = Array.isArray(parsed.scenes) ? parsed.scenes.length : 0
     parsed = alignStructuredStoryToBriefOutline(parsed, sceneOutline)
+  parsed = applyOutputConfigLock(parsed, outputConfig)
     const alignedSceneCount = Array.isArray(parsed.scenes) ? parsed.scenes.length : 0
 
     if (sceneOutline.length > 0 && rawSceneCount !== alignedSceneCount) {
@@ -251,6 +283,7 @@ Retourne UNIQUEMENT le JSON, sans markdown ni explication.${templateContext}`,
       costEur: result.costEur,
       outputData: {
         ...parsed,
+        llm: { mode: llmTarget.mode, model: llmTarget.model },
         sceneOutlineUsed: sceneOutline.length > 0,
         directorPlan: {
           tone,

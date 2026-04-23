@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { translatePromptText } from '@/lib/client/prompt-translation'
 import type { LlmMode, ProjectConfig, Run, RunStep, StepLlmConfig } from '@/types/run'
 import { TOTAL_PIPELINE_STEPS } from '@/lib/pipeline/constants'
 import { getRunStepLabel } from '@/lib/runs/presentation'
@@ -260,8 +261,22 @@ export default function RunPage() {
   const [catalog, setCatalog] = useState<LlmCatalog>({ localModels: [], localError: null, cloudModels: [], cloudAvailable: false })
   const [selectedLlmMode, setSelectedLlmMode] = useState<LlmMode>('local')
   const [selectedLlmModel, setSelectedLlmModel] = useState('')
+  const [step6TranslatedPrompts, setStep6TranslatedPrompts] = useState<Record<number, string>>({})
+  const [step6Translating, setStep6Translating] = useState<Record<number, 'fr-en' | 'en-fr' | null>>({})
+  const [step6TranslationNotice, setStep6TranslationNotice] = useState<Record<number, { tone: 'success' | 'error'; message: string }>>({})
   const focalStep = useMemo(() => (run ? getFocalStep(run) : 1), [run])
   const selectedStep = selectedStepOverride ?? focalStep
+  const selectedStepStateToken = useMemo(() => {
+    const step = run?.steps.find((entry) => entry.stepNumber === selectedStep)
+    if (!step) return `${selectedStep}:missing`
+    return [
+      step.stepNumber,
+      step.status,
+      step.startedAt ?? '',
+      step.completedAt ?? '',
+      step.error ?? '',
+    ].join(':')
+  }, [run?.steps, selectedStep])
 
   useEffect(() => {
     void loadRun()
@@ -279,7 +294,7 @@ export default function RunPage() {
   useEffect(() => {
     if (!run) return
     void loadDeliverable(selectedStep)
-  }, [run?.id, selectedStep])
+  }, [run?.id, selectedStep, selectedStepStateToken])
 
   useEffect(() => {
     if (!run) return
@@ -509,6 +524,37 @@ export default function RunPage() {
       await loadDeliverable(2)
     } finally {
       setActionBusy(null)
+    }
+  }
+
+  async function handleTranslateStep6Prompt(promptKey: number, text: string, from: 'fr' | 'en', to: 'fr' | 'en') {
+    const source = text.trim()
+    if (!source) return
+
+    const key: 'fr-en' | 'en-fr' = from === 'fr' ? 'fr-en' : 'en-fr'
+    setStep6Translating((prev) => ({ ...prev, [promptKey]: key }))
+    setStep6TranslationNotice((prev) => ({ ...prev, [promptKey]: { tone: 'success', message: '' } }))
+
+    try {
+      const result = await translatePromptText(source, { from, to })
+      setStep6TranslatedPrompts((prev) => ({ ...prev, [promptKey]: result.text }))
+      setStep6TranslationNotice((prev) => ({
+        ...prev,
+        [promptKey]: {
+          tone: 'success',
+          message: `${result.provider} · ${result.mode} · ${result.model}`,
+        },
+      }))
+    } catch (error) {
+      setStep6TranslationNotice((prev) => ({
+        ...prev,
+        [promptKey]: {
+          tone: 'error',
+          message: (error as Error).message,
+        },
+      }))
+    } finally {
+      setStep6Translating((prev) => ({ ...prev, [promptKey]: null }))
     }
   }
 
@@ -1020,19 +1066,19 @@ export default function RunPage() {
                       <div key={`blueprint-${index}`} className="rounded-lg border p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="text-sm font-semibold">Plan {index + 1} — {readText(record?.title) || 'Sans titre'}</div>
+                            <div className="text-sm font-semibold">Plan {index + 1} — {readText(record?.panelTitle) || readText(record?.title) || 'Sans titre'}</div>
                             <div className="mt-1 text-xs text-muted-foreground">
-                              {readText(record?.camera) || 'Caméra non renseignée'}
-                              {readText(record?.lighting) ? ` · ${readText(record?.lighting)}` : ''}
+                              {readText(record?.camera) || readText(record?.framing) || readText(record?.sourceCamera) || 'Caméra non renseignée'}
+                              {(readText(record?.lighting) || readText(record?.sourceLighting)) ? ` · ${readText(record?.lighting) || readText(record?.sourceLighting)}` : ''}
                             </div>
                           </div>
                         </div>
                         <div className="mt-3 whitespace-pre-wrap text-sm text-foreground/90">
-                          {readText(record?.description) || 'Aucune description visible.'}
+                          {readText(record?.description) || readText(record?.sourceDescription) || readText(record?.action) || 'Aucune description visible.'}
                         </div>
-                        {(readText(record?.childCaption) || readText(record?.dialogue)) && (
+                        {(readText(record?.childCaption) || readText(record?.dialogue) || readText(record?.action)) && (
                           <div className="mt-3 rounded-md bg-muted/30 px-3 py-2 text-sm">
-                            {readText(record?.childCaption) || readText(record?.dialogue)}
+                            {readText(record?.childCaption) || readText(record?.dialogue) || readText(record?.action)}
                           </div>
                         )}
                       </div>
@@ -1047,12 +1093,44 @@ export default function RunPage() {
                 <div className="space-y-3">
                   {deliverablePrompts.length > 0 ? deliverablePrompts.map((prompt, index) => {
                     const record = asRecord(prompt)
+                    const promptKey = Number(record?.sceneIndex) || index + 1
+                    const promptText = step6TranslatedPrompts[promptKey] ?? readText(record?.prompt)
+                    const notice = step6TranslationNotice[promptKey]
                     return (
                       <div key={`prompt-${index}`} className="rounded-lg border p-4">
-                        <div className="text-sm font-semibold">Prompt {index + 1}</div>
-                        <div className="mt-2 whitespace-pre-wrap text-sm text-foreground/90">
-                          {readText(record?.prompt) || 'Aucun prompt visible.'}
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-sm font-semibold">Prompt {index + 1}</div>
+                          <div className="flex gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 text-[10px]"
+                              onClick={() => handleTranslateStep6Prompt(promptKey, promptText, 'fr', 'en')}
+                              disabled={Boolean(step6Translating[promptKey]) || !promptText.trim()}
+                            >
+                              {step6Translating[promptKey] === 'fr-en' ? 'Traduction...' : 'FR → EN'}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 text-[10px]"
+                              onClick={() => handleTranslateStep6Prompt(promptKey, promptText, 'en', 'fr')}
+                              disabled={Boolean(step6Translating[promptKey]) || !promptText.trim()}
+                            >
+                              {step6Translating[promptKey] === 'en-fr' ? 'Traduction...' : 'EN → FR'}
+                            </Button>
+                          </div>
                         </div>
+                        <div className="mt-2 whitespace-pre-wrap text-sm text-foreground/90">
+                          {promptText || 'Aucun prompt visible.'}
+                        </div>
+                        {notice?.message && (
+                          <div className={`mt-3 rounded-md border px-3 py-2 text-xs ${notice.tone === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                            {notice.message}
+                          </div>
+                        )}
                       </div>
                     )
                   }) : (

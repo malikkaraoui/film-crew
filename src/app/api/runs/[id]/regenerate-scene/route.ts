@@ -15,6 +15,7 @@ import { queueStoryboardCloudPlanGeneration } from '@/lib/storyboard/cloud-plan'
 import type { VideoProvider } from '@/lib/providers/types'
 import { logger } from '@/lib/logger'
 import { getBlueprintScene, readStoryboardBlueprint } from '@/lib/storyboard/blueprint'
+import { readProjectConfig } from '@/lib/runs/project-config'
 
 /**
  * POST /api/runs/[id]/regenerate-scene
@@ -265,6 +266,9 @@ async function regenerateVideoScene(
   customPrompt?: string,
   customNegativePrompt?: string,
 ): Promise<Response> {
+  const projectConfig = await readProjectConfig(storagePath)
+  const referenceImageUrls = projectConfig?.referenceImages?.urls ?? []
+
   // Lire prompts.json pour récupérer le prompt de la scène
   let promptData: { prompts: { sceneIndex: number; prompt: string; negativePrompt?: string }[] }
   try {
@@ -337,6 +341,7 @@ async function regenerateVideoScene(
           resolution: '720p',
           duration: 10,
           aspectRatio: '9:16',
+          referenceImageUrls,
           outputDir: clipsDir,
         })
       },

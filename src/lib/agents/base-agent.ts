@@ -11,6 +11,9 @@ export type AgentSpeakOptions = {
   timeoutMs?: number
   resetHistory?: boolean
   model?: string
+  host?: string
+  headers?: Record<string, string>
+  contextualPrelude?: string
 }
 
 export class BaseAgent {
@@ -37,7 +40,11 @@ export class BaseAgent {
       this.resetConversation()
     }
 
-    this.conversationHistory.push({ role: 'user', content: context })
+    const finalContext = opts.contextualPrelude
+      ? `${opts.contextualPrelude.trim()}\n\n${context}`
+      : context
+
+    this.conversationHistory.push({ role: 'user', content: finalContext })
 
     const start = Date.now()
 
@@ -50,6 +57,8 @@ export class BaseAgent {
           maxTokens: opts.maxTokens ?? 512,
           timeoutMs: opts.timeoutMs,
           model: opts.model,
+          host: opts.host,
+          headers: opts.headers,
         })
       },
       runId,
@@ -66,7 +75,7 @@ export class BaseAgent {
       runId,
       provider: provider.name,
       endpoint: 'llm/chat',
-      requestData: { agent: this.profile.role, contextLength: context.length },
+      requestData: { agent: this.profile.role, contextLength: finalContext.length },
       responseStatus: 200,
       latencyMs,
       costEur: result.costEur,
@@ -103,7 +112,7 @@ export class BaseAgent {
   async writeBriefSection(
     meetingTranscript: string,
     runId: string,
-    opts: Pick<AgentSpeakOptions, 'timeoutMs' | 'model'> = {},
+    opts: Pick<AgentSpeakOptions, 'timeoutMs' | 'model' | 'host' | 'headers' | 'contextualPrelude'> = {},
   ): Promise<AgentMessage> {
     // Réinitialiser l'historique pour rester dans la fenêtre de contexte.
     // Le transcript complet est passé directement dans le prompt.
@@ -115,6 +124,9 @@ export class BaseAgent {
       resetHistory: true,
       timeoutMs: opts.timeoutMs,
       model: opts.model,
+      host: opts.host,
+      headers: opts.headers,
+      contextualPrelude: opts.contextualPrelude,
     })
     message.messageType = 'brief_section'
     return message

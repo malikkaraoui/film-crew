@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { translatePromptText } from '@/lib/client/prompt-translation'
 
 type StoryboardImage = {
   sceneIndex: number
@@ -50,6 +51,8 @@ export function StoryboardGrid({ runId, images, boardFilePath, boardLayout, asse
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const [editText, setEditText] = useState('')
   const [promptDrafts, setPromptDrafts] = useState<Record<number, string>>({})
+  const [translating, setTranslating] = useState<Record<number, 'fr-en' | 'en-fr' | null>>({})
+  const [translationNotice, setTranslationNotice] = useState<Record<number, { tone: 'success' | 'error'; message: string }>>({})
 
   function startEdit(img: StoryboardImage) {
     setEditingIndex(img.sceneIndex)
@@ -63,6 +66,37 @@ export function StoryboardGrid({ runId, images, boardFilePath, boardLayout, asse
 
   function getPromptDraft(img: StoryboardImage): string {
     return promptDrafts[img.sceneIndex] ?? img.prompt ?? img.description
+  }
+
+  async function handleTranslatePrompt(img: StoryboardImage, from: 'fr' | 'en', to: 'fr' | 'en') {
+    const draft = getPromptDraft(img).trim()
+    if (!draft) return
+
+    const key: 'fr-en' | 'en-fr' = from === 'fr' ? 'fr-en' : 'en-fr'
+    setTranslating((prev) => ({ ...prev, [img.sceneIndex]: key }))
+    setTranslationNotice((prev) => ({ ...prev, [img.sceneIndex]: { tone: 'success', message: '' } }))
+
+    try {
+      const result = await translatePromptText(draft, { from, to })
+      setPromptDrafts((prev) => ({ ...prev, [img.sceneIndex]: result.text }))
+      setTranslationNotice((prev) => ({
+        ...prev,
+        [img.sceneIndex]: {
+          tone: 'success',
+          message: `Traduit via ${result.provider} · ${result.mode} · ${result.model}`,
+        },
+      }))
+    } catch (error) {
+      setTranslationNotice((prev) => ({
+        ...prev,
+        [img.sceneIndex]: {
+          tone: 'error',
+          message: (error as Error).message,
+        },
+      }))
+    } finally {
+      setTranslating((prev) => ({ ...prev, [img.sceneIndex]: null }))
+    }
   }
 
   if (images.length === 0) {
@@ -215,6 +249,31 @@ export function StoryboardGrid({ runId, images, boardFilePath, boardLayout, asse
                     onChange={(e) => setPromptDrafts((prev) => ({ ...prev, [img.sceneIndex]: e.target.value }))}
                     className="w-full min-h-24 rounded-md border bg-background px-2 py-1 text-[11px]"
                   />
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-[10px] h-6"
+                      onClick={() => handleTranslatePrompt(img, 'fr', 'en')}
+                      disabled={Boolean(translating[img.sceneIndex]) || !getPromptDraft(img).trim()}
+                    >
+                      {translating[img.sceneIndex] === 'fr-en' ? 'Traduction...' : 'FR → EN'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-[10px] h-6"
+                      onClick={() => handleTranslatePrompt(img, 'en', 'fr')}
+                      disabled={Boolean(translating[img.sceneIndex]) || !getPromptDraft(img).trim()}
+                    >
+                      {translating[img.sceneIndex] === 'en-fr' ? 'Traduction...' : 'EN → FR'}
+                    </Button>
+                  </div>
+                  {translationNotice[img.sceneIndex]?.message && (
+                    <div className={`rounded-md border px-2 py-1 text-[10px] ${translationNotice[img.sceneIndex]?.tone === 'error' ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                      {translationNotice[img.sceneIndex]?.message}
+                    </div>
+                  )}
                   <div className="flex gap-1">
                     <Button
                       size="sm"

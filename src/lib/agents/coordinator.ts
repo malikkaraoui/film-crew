@@ -6,8 +6,9 @@ import { executeWithFailover } from '@/lib/providers/failover'
 import type { LLMProvider } from '@/lib/providers/types'
 import { logger } from '@/lib/logger'
 import type { AgentMessage, AgentRole, MeetingBrief, MeetingSceneOutlineItem } from '@/types/agent'
-import type { MeetingLlmMode } from '@/types/run'
+import type { MeetingLlmMode, OutputConfig, ReferenceImageConfig } from '@/types/run'
 import type { StyleTemplate } from '@/lib/templates/loader'
+import { resolveLlmTarget } from '@/lib/llm/target'
 
 const MEETING_TRANSCRIPT_MAX_CHARS = 2000
 const MEETING_LLM_TIMEOUT_MS = 180_000
@@ -82,6 +83,66 @@ function normalizeSceneOutline(value: unknown): MeetingSceneOutlineItem[] {
     .sort((a, b) => a.index - b.index)
 }
 
+function buildOutputLockContext(outputConfig: OutputConfig | null | undefined): string {
+  if (!outputConfig) return ''
+
+  return [
+    'Cadre de production verrouillé pour ce run :',
+    `- vidéos prévues en sortie : ${outputConfig.videoCount}`,
+    `- vidéo entière à préparer ici : ${outputConfig.fullVideoDurationS}s`,
+    `- durée par scène : ${outputConfig.sceneDurationS}s`,
+    `- sceneOutline obligatoire : exactement ${outputConfig.sceneCount} scènes`,
+    `- storyboard attendu : ${outputConfig.sceneCount} vignettes`,
+    `- prompts attendus : ${outputConfig.sceneCount} prompts vidéo`,
+    'Ne réduis pas ce cadrage. Ne fusionne pas les scènes. Ne change pas le nombre de scènes.',
+  ].join('\n')
+}
+
+function buildReferenceImagesContext(referenceImages: ReferenceImageConfig | null | undefined): string {
+  if (!referenceImages?.urls?.length) return ''
+
+  return [
+    'Références visuelles projet :',
+    ...referenceImages.urls.map((url, index) => `- image ${index + 1} : ${url}`),
+    'Présente-les et traite-les comme des sources d’inspiration visuelle partagées entre agents.',
+    'Utilise-les comme ancrage visuel pour la cohérence de personnage, décor, matière, palette, lumière, texture ou cadrage.',
+    'Référence-les explicitement quand elles influencent une proposition importante.',
+    'Ce sont des inspirations fortes, pas des copies littérales ni des contraintes rigides.',
+  ].join('\n')
+}
+
+function buildReferenceImagesDirective(referenceImages: ReferenceImageConfig | null | undefined): string {
+  const context = buildReferenceImagesContext(referenceImages)
+  if (!context) return ''
+
+  return [
+    context,
+    '',
+    'Consigne réunion :',
+    '- considère ces images/URLs dès maintenant dans ton analyse',
+    '- cite les inspirations utiles si elles orientent le ton, le look, le décor, le personnage ou le cadrage',
+    '- propose des idées compatibles avec ces références sans les recopier plan par plan',
+  ].join('\n')
+}
+
+function validateSceneOutlineLock(sceneOutline: MeetingSceneOutlineItem[], outputConfig: OutputConfig | null | undefined): void {
+  if (!outputConfig) return
+
+  if (sceneOutline.length !== outputConfig.sceneCount) {
+    throw new Error(`sceneOutline verrouillé invalide: ${sceneOutline.length} scène(s) générée(s), ${outputConfig.sceneCount} attendue(s)`)
+  }
+
+  const invalidScene = sceneOutline.find((scene) => scene.duration_s !== outputConfig.sceneDurationS)
+  if (invalidScene) {
+    throw new Error(`sceneOutline verrouillé invalide: scène ${invalidScene.index} à ${invalidScene.duration_s}s, ${outputConfig.sceneDurationS}s attendues`)
+  }
+
+  const totalDuration = sceneOutline.reduce((sum, scene) => sum + scene.duration_s, 0)
+  if (totalDuration !== outputConfig.fullVideoDurationS) {
+    throw new Error(`sceneOutline verrouillé invalide: ${totalDuration}s cumulées, ${outputConfig.fullVideoDurationS}s attendues`)
+  }
+}
+
 /**
  * Coordonne une réunion de production entre les 6 agents.
  *
@@ -100,8 +161,12 @@ export class MeetingCoordinator {
   private idea: string
   private brandKit: string | null
   private template: StyleTemplate | null
+  private outputConfig: OutputConfig | null
+  private referenceImages: ReferenceImageConfig | null
   private meetingLlmMode: MeetingLlmMode
   private meetingLlmModel: string | null
+  private llmHost?: string
+  private llmHeaders?: Record<string, string>
   private onMessage?: (message: AgentMessage) => void
 
   constructor(opts: {
@@ -109,6 +174,8 @@ export class MeetingCoordinator {
     idea: string
     brandKit?: string | null
     template?: StyleTemplate | null
+    outputConfig?: OutputConfig | null
+    referenceImages?: ReferenceImageConfig | null
     meetingLlmMode?: MeetingLlmMode
     meetingLlmModel?: string | null
     onMessage?: (message: AgentMessage) => void
@@ -117,9 +184,16 @@ export class MeetingCoordinator {
     this.idea = opts.idea
     this.brandKit = opts.brandKit ?? null
     this.template = opts.template ?? null
+    this.outputConfig = opts.outputConfig ?? null
+    this.referenceImages = opts.referenceImages ?? null
     this.meetingLlmMode = opts.meetingLlmMode ?? 'local'
     this.meetingLlmModel = opts.meetingLlmModel?.trim() || null
     this.onMessage = opts.onMessage
+
+    const llmTarget = resolveLlmTarget(this.meetingLlmMode, this.meetingLlmModel)
+    this.meetingLlmModel = llmTarget.model
+    this.llmHost = llmTarget.host
+    this.llmHeaders = llmTarget.headers
 
     // Initialiser tous les agents
     for (const [role, profile] of Object.entries(AGENT_PROFILES)) {
@@ -139,6 +213,7 @@ export class MeetingCoordinator {
       event: 'meeting_start',
       runId: this.runId,
       idea: this.idea,
+      outputConfig: this.outputConfig,
       llmMode: this.meetingLlmMode,
       llmModel: this.meetingLlmModel,
     })
@@ -149,9 +224,12 @@ export class MeetingCoordinator {
     const templateContext = this.template
       ? `\n\nTemplate de style : ${this.template.name} — ${this.template.description}\nRythme : ${this.template.rhythm}\nTransitions : ${this.template.transitions.join(', ')}`
       : ''
+    const outputLockContext = this.outputConfig ? `\n\n${buildOutputLockContext(this.outputConfig)}` : ''
+    const referenceImagesContext = this.referenceImages ? `\n\n${buildReferenceImagesContext(this.referenceImages)}` : ''
+    const referenceImagesDirective = buildReferenceImagesDirective(this.referenceImages)
 
     // Phase 1 : Mia ouvre la réunion
-    const openingContext = `Nouvelle réunion de production. L'idée du client est : "${this.idea}".${this.brandKit ? `\n\nBrand Kit de la chaîne :\n${this.brandKit}` : ''}${templateContext}\n\nPrésente le brief à l'équipe et lance la discussion. Sois directe et motivante.`
+    const openingContext = `Nouvelle réunion de production. L'idée du client est : "${this.idea}".${this.brandKit ? `\n\nBrand Kit de la chaîne :\n${this.brandKit}` : ''}${templateContext}${outputLockContext}${referenceImagesContext}\n\nPrésente le brief à l'équipe et lance la discussion. Sois directe et motivante.`
 
     const opening = await this.agentSpeak('mia', openingContext)
     totalCost += opening.metadata?.costEur ?? 0
@@ -167,6 +245,7 @@ export class MeetingCoordinator {
       const msg = await this.agentSpeak(role, context, {
         resetHistory: true,
         timeoutMs: MEETING_LLM_TIMEOUT_MS,
+        contextualPrelude: referenceImagesDirective || undefined,
       })
       totalCost += msg.metadata?.costEur ?? 0
     }
@@ -180,6 +259,7 @@ export class MeetingCoordinator {
         const msg = await this.agentSpeak(role, context, {
           resetHistory: true,
           timeoutMs: MEETING_LLM_TIMEOUT_MS,
+          contextualPrelude: referenceImagesDirective || undefined,
         })
         totalCost += msg.metadata?.costEur ?? 0
       }
@@ -191,6 +271,7 @@ export class MeetingCoordinator {
     const brandCheck = await this.agentSpeak('emilie', brandCheckContext, {
       resetHistory: true,
       timeoutMs: MEETING_LLM_TIMEOUT_MS,
+      contextualPrelude: referenceImagesDirective || undefined,
     })
     brandCheck.messageType = 'validation'
     totalCost += brandCheck.metadata?.costEur ?? 0
@@ -206,6 +287,9 @@ export class MeetingCoordinator {
       const section = await agent.writeBriefSection(transcript, this.runId, {
         timeoutMs: MEETING_LLM_TIMEOUT_MS,
         model: this.meetingLlmModel ?? undefined,
+        host: this.llmHost,
+        headers: this.llmHeaders,
+        contextualPrelude: referenceImagesDirective || undefined,
       })
       await this.recordMessage(section)
       totalCost += section.metadata?.costEur ?? 0
@@ -230,6 +314,9 @@ export class MeetingCoordinator {
     try {
       sceneOutline = await this.buildSceneOutline(fullTranscript, briefSections)
     } catch (error) {
+      if (this.outputConfig) {
+        throw error
+      }
       logger.warn({
         event: 'meeting_scene_outline_missing',
         runId: this.runId,
@@ -268,6 +355,8 @@ export class MeetingCoordinator {
     const message = await agent.speak(context, this.runId, {
       ...opts,
       model: opts.model ?? this.meetingLlmModel ?? undefined,
+      host: opts.host ?? this.llmHost,
+      headers: opts.headers ?? this.llmHeaders,
     })
     await this.recordMessage(message)
     return message
@@ -312,6 +401,8 @@ export class MeetingCoordinator {
     sections: MeetingBrief['sections'],
   ): Promise<MeetingSceneOutlineItem[]> {
     const compactTranscript = compactTranscriptForPrompt(transcript, SCENE_OUTLINE_TRANSCRIPT_MAX_CHARS)
+    const outputLockContext = buildOutputLockContext(this.outputConfig)
+    const referenceImagesContext = buildReferenceImagesContext(this.referenceImages)
     const compactSections = sections.map((section) => ({
       agent: section.agent,
       title: section.title,
@@ -350,12 +441,16 @@ export class MeetingCoordinator {
                 '- si plusieurs scènes sont évoquées, conserve-les toutes dans l ordre',
                 '- chaque scène doit rester dessinable et exploitable ensuite par la prod',
                 '- camera et lighting doivent rester courts et concrets',
+                ...(outputLockContext ? [outputLockContext] : []),
+                ...(referenceImagesContext ? [referenceImagesContext] : []),
               ].join('\n'),
             },
             {
               role: 'user',
               content: [
                 `Idée : ${this.idea}`,
+                outputLockContext ? `\n${outputLockContext}` : '',
+                referenceImagesContext ? `\n${referenceImagesContext}` : '',
                 '',
                 'Résumé et sections du brief :',
                 JSON.stringify(compactSections, null, 2),
@@ -370,6 +465,8 @@ export class MeetingCoordinator {
             temperature: 0.2,
             maxTokens: 2200,
             timeoutMs: MEETING_LLM_TIMEOUT_MS,
+            host: this.llmHost,
+            headers: this.llmHeaders,
           },
         )
       },
@@ -378,6 +475,7 @@ export class MeetingCoordinator {
 
     const payload = extractJsonObject(result.content)
     const sceneOutline = normalizeSceneOutline(payload.sceneOutline)
+    validateSceneOutlineLock(sceneOutline, this.outputConfig)
 
     if (sceneOutline.length === 0) {
       throw new Error('sceneOutline vide après synthèse réunion')

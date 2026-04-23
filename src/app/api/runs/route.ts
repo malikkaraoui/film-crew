@@ -7,6 +7,34 @@ import { join } from 'path'
 import { buildIntentionPrefix } from '@/lib/intention/schema'
 import { writeProjectConfig } from '@/lib/runs/project-config'
 
+function parsePositiveInt(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.round(value)
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number.parseInt(value.replace(/[^0-9]/g, ''), 10)
+    if (Number.isFinite(parsed) && parsed > 0) return parsed
+  }
+  return fallback
+}
+
+function normalizeReferenceUrls(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .slice(0, 2)
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
 export async function GET() {
   try {
     const runs = await getRuns()
@@ -31,11 +59,40 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-  const { chainId, idea, template, type, intention, meetingLlmMode, meetingLlmModel, autoStart } = body
+    const { chainId, idea, template, type, intention, meetingLlmMode, meetingLlmModel, autoStart, outputConfig: rawOutputConfig, referenceImages: rawReferenceImages } = body
 
     if (!chainId || !idea) {
       return NextResponse.json(
         { error: { code: 'VALIDATION_ERROR', message: 'Chaîne et idée requises' } },
+        { status: 400 }
+      )
+    }
+
+    const outputConfig = rawOutputConfig && typeof rawOutputConfig === 'object'
+      ? {
+          videoCount: parsePositiveInt((rawOutputConfig as Record<string, unknown>).videoCount, 1),
+          fullVideoDurationS: parsePositiveInt((rawOutputConfig as Record<string, unknown>).fullVideoDurationS, 60),
+          sceneDurationS: parsePositiveInt((rawOutputConfig as Record<string, unknown>).sceneDurationS, 10),
+          sceneCount: 1,
+        }
+      : null
+
+    if (outputConfig && outputConfig.fullVideoDurationS % outputConfig.sceneDurationS !== 0) {
+      return NextResponse.json(
+        { error: { code: 'VALIDATION_ERROR', message: 'La durée de la vidéo entière doit être un multiple exact de la durée par scène.' } },
+        { status: 400 }
+      )
+    }
+
+    if (outputConfig) {
+      outputConfig.sceneCount = Math.max(1, outputConfig.fullVideoDurationS / outputConfig.sceneDurationS)
+    }
+
+    const referenceUrls = normalizeReferenceUrls((rawReferenceImages as Record<string, unknown> | null | undefined)?.urls)
+    const invalidReferenceUrl = referenceUrls.find((url) => !isValidHttpUrl(url))
+    if (invalidReferenceUrl) {
+      return NextResponse.json(
+        { error: { code: 'VALIDATION_ERROR', message: `URL image invalide : ${invalidReferenceUrl}` } },
         { status: 400 }
       )
     }
@@ -54,6 +111,8 @@ export async function POST(request: Request) {
     const projectConfig = await writeProjectConfig(runPath, {
       meetingLlmMode,
       meetingLlmModel,
+      outputConfig,
+      referenceImages: referenceUrls.length > 0 ? { urls: referenceUrls } : null,
     })
 
     // Persister intention.json si le questionnaire a été rempli
