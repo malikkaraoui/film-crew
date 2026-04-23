@@ -251,6 +251,10 @@ export const step7Preview: PipelineStep = {
     const musicPath: string | null = genManifest.musicPath ?? null
     const hasMusicBg = !!(musicPath && await fileExists(musicPath))
 
+    // ─── Dossier final/ ───────────────────────────────────────────────────────
+    const finalDir = join(ctx.storagePath, 'final')
+    await mkdir(finalDir, { recursive: true })
+
     // Transition config depuis template (champs additifs, pas transitions[])
     const transitionConfig: TransitionConfig = {
       type: (ctx.template?.previewTransition as XfadeTransition) ?? DEFAULT_TRANSITION,
@@ -285,10 +289,6 @@ export const step7Preview: PipelineStep = {
         logger.warn({ event: 'srt_generation_failed', runId: ctx.runId, error: (e as Error).message })
       }
     }
-
-    // ─── Dossier final/ ───────────────────────────────────────────────────────
-    const finalDir = join(ctx.storagePath, 'final')
-    await mkdir(finalDir, { recursive: true })
 
     // ─── Concat.txt pour clips (conservé pour compatibilité + fallback) ──────
     const concatPath = join(finalDir, 'concat.txt')
