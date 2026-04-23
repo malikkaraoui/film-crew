@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { RunStepper } from '@/components/stepper/run-stepper'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -656,10 +655,6 @@ export default function RunPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold truncate max-w-md">{run.idea}</h1>
-      </div>
-
-      <div className="mt-4">
-        <RunStepper steps={run.steps} currentStep={currentStep} />
       </div>
 
       {run.status === 'pending' && (
