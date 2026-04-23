@@ -134,6 +134,14 @@ export default function StudioPage() {
   }, [catalog.cloudModels, catalog.localModels, detectedCurrentModel, step2Config?.mode, step2Config?.model])
 
   useEffect(() => {
+    const models = selectedMeetingMode === 'cloud' ? catalog.cloudModels : catalog.localModels
+    if (models.length === 0) return
+    if (models.includes(selectedMeetingModel)) return
+
+    setSelectedMeetingModel(models[0])
+  }, [catalog.cloudModels, catalog.localModels, selectedMeetingMode, selectedMeetingModel])
+
+  useEffect(() => {
     const mode = step3Config?.mode ?? 'local'
     const fallbackModel = mode === 'cloud'
       ? catalog.cloudModels[0] ?? ''
@@ -142,6 +150,14 @@ export default function StudioPage() {
     setNextStepMode(mode)
     setNextStepModel(step3Config?.model ?? fallbackModel)
   }, [catalog.cloudModels, catalog.localModels, step3Config?.mode, step3Config?.model])
+
+  useEffect(() => {
+    const models = nextStepMode === 'cloud' ? catalog.cloudModels : catalog.localModels
+    if (models.length === 0) return
+    if (models.includes(nextStepModel)) return
+
+    setNextStepModel(models[0])
+  }, [catalog.cloudModels, catalog.localModels, nextStepMode, nextStepModel])
 
   async function loadRun() {
     try {

@@ -4,15 +4,25 @@ import { getRunById, getRunSteps, getRunningRun } from '@/lib/db/queries/runs'
 import { executeSingleStep } from '@/lib/pipeline/engine'
 import { resetRunFromStep } from '@/lib/pipeline/reset'
 import { logger } from '@/lib/logger'
+import { syncStep2MeetingState } from '@/lib/runs/meeting-sync'
+import { normalizeLlmModelForMode } from '@/lib/llm/target'
+import {
+  getStepLlmConfig,
+  isLlmBackedStep,
+  normalizeMeetingLlmMode,
+  readProjectConfig,
+  writeProjectConfig,
+} from '@/lib/runs/project-config'
 
 const TERMINAL_STATUSES = ['completed', 'killed']
 
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params
+    await syncStep2MeetingState(id)
     const run = await getRunById(id)
 
     if (!run) {
@@ -47,12 +57,38 @@ export async function POST(
     const currentStep = run.currentStep ?? 1
     const steps = await getRunSteps(id)
     const currentRunStep = steps.find((step) => step.stepNumber === currentStep)
+    const body = await request.json().catch(() => ({})) as {
+      llmMode?: 'local' | 'cloud'
+      llmModel?: string
+    }
 
     if (!currentRunStep) {
       return NextResponse.json(
         { error: { code: 'STEP_NOT_FOUND', message: `Étape ${currentStep} introuvable` } },
         { status: 404 },
       )
+    }
+
+    const storagePath = join(process.cwd(), 'storage', 'runs', id)
+
+    if (isLlmBackedStep(currentStep)) {
+      const projectConfig = await readProjectConfig(storagePath)
+      const existingStepConfig = getStepLlmConfig(projectConfig, currentStep)
+      const llmMode = normalizeMeetingLlmMode(body.llmMode ?? existingStepConfig?.mode)
+      const requestedLlmModel = typeof body.llmModel === 'string' && body.llmModel.trim()
+        ? body.llmModel.trim()
+        : existingStepConfig?.model
+      const llmModel = normalizeLlmModelForMode(llmMode, requestedLlmModel)
+
+      await writeProjectConfig(storagePath, {
+        ...(currentStep === 2 ? { meetingLlmMode: llmMode, meetingLlmModel: llmModel } : {}),
+        stepLlmConfigs: {
+          [String(currentStep) as '2' | '3' | '4' | '6']: {
+            mode: llmMode,
+            model: llmModel || '',
+          },
+        },
+      })
     }
 
     const needsReset = run.status === 'failed' || (run.status === 'paused' && currentRunStep.status === 'completed')
@@ -67,7 +103,7 @@ export async function POST(
     if (needsReset) {
       await resetRunFromStep({
         runId: id,
-        storagePath: join(process.cwd(), 'storage', 'runs', id),
+        storagePath,
         stepNumber: currentStep,
       })
     }

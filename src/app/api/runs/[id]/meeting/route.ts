@@ -6,6 +6,7 @@ import { deleteAgentTraces, getAgentTraces } from '@/lib/db/queries/traces'
 import { readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { logger } from '@/lib/logger'
+import { normalizeLlmModelForMode } from '@/lib/llm/target'
 import {
   normalizeMeetingLlmMode,
   readProjectConfig,
@@ -172,9 +173,10 @@ export async function POST(
 
     const currentProjectConfig = await readProjectConfig(storagePath)
     const meetingLlmMode = normalizeMeetingLlmMode(body.meetingLlmMode ?? currentProjectConfig?.meetingLlmMode)
-    const meetingLlmModel = typeof body.meetingLlmModel === 'string' && body.meetingLlmModel.trim()
+    const requestedMeetingLlmModel = typeof body.meetingLlmModel === 'string' && body.meetingLlmModel.trim()
       ? body.meetingLlmModel.trim()
       : currentProjectConfig?.meetingLlmModel
+    const meetingLlmModel = normalizeLlmModelForMode(meetingLlmMode, requestedMeetingLlmModel)
 
     await writeProjectConfig(storagePath, {
       meetingLlmMode,

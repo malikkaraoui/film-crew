@@ -517,6 +517,16 @@ export default function RunPage() {
     setSelectedLlmModel(fallbackModel)
   }, [catalog.cloudModels, catalog.localModels, selectedStep, selectedStepLlmConfig?.mode, selectedStepLlmConfig?.model])
 
+  useEffect(() => {
+    if (!isLlmBackedStep(selectedStep)) return
+
+    const availableModels = selectedLlmMode === 'cloud' ? catalog.cloudModels : catalog.localModels
+    if (availableModels.length === 0) return
+    if (availableModels.includes(selectedLlmModel)) return
+
+    setSelectedLlmModel(availableModels[0])
+  }, [catalog.cloudModels, catalog.localModels, selectedLlmMode, selectedLlmModel, selectedStep])
+
   if (!run) return <p className="text-sm text-muted-foreground">Chargement...</p>
 
   const currentStep = run.currentStep ?? focalStep
