@@ -245,6 +245,38 @@ function shortText(value: unknown, max = 220): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
+async function collectPaidGenerationConfirmation(sceneCount: number): Promise<null | {
+  confirmPaidGeneration: true
+  confirmationText: string
+  acknowledgedSceneCount: number
+}> {
+  const proceed = window.confirm(
+    `⚠️ Génération payante réelle. Cette action peut lancer ${sceneCount} scène(s) provider et consommer des crédits. Continuer ?`,
+  )
+  if (!proceed) return null
+
+  const countInput = window.prompt(`Tape le nombre exact de scènes qui vont partir en génération (${sceneCount})`)?.trim()
+  if (!countInput) return null
+
+  const acknowledgedSceneCount = Number.parseInt(countInput, 10)
+  if (!Number.isFinite(acknowledgedSceneCount) || acknowledgedSceneCount !== sceneCount) {
+    window.alert(`Confirmation invalide : il fallait confirmer exactement ${sceneCount} scène(s).`)
+    return null
+  }
+
+  const confirmationText = window.prompt('Tape exactement GENERATION PAYANTE pour autoriser le batch payant')?.trim()
+  if (confirmationText !== 'GENERATION PAYANTE') {
+    window.alert('Confirmation texte invalide. Génération annulée.')
+    return null
+  }
+
+  return {
+    confirmPaidGeneration: true,
+    confirmationText,
+    acknowledgedSceneCount,
+  }
+}
+
 export default function RunPage() {
   const { id } = useParams<{ id: string }>()
   const [run, setRun] = useState<RunWithSteps | null>(null)
@@ -394,6 +426,26 @@ export default function RunPage() {
     const needsConfirmation = run.status === 'paused' || run.status === 'failed'
     if (needsConfirmation && !confirm(`Relancer l'étape ${selectedStep} ? Les livrables aval seront remis à zéro.`)) return
 
+    let paidGenerationPayload: {
+      confirmPaidGeneration: true
+      confirmationText: string
+      acknowledgedSceneCount: number
+    } | null = null
+
+    if (selectedStep === 7) {
+      const promptCount = deliverablePrompts.length
+      if (promptCount <= 0) {
+        setRunNotice('Aucun prompt détecté pour l’étape 7. Génération bloquée.')
+        return
+      }
+
+      paidGenerationPayload = await collectPaidGenerationConfirmation(promptCount)
+      if (!paidGenerationPayload) {
+        setRunNotice('Génération payante annulée avant envoi provider.')
+        return
+      }
+    }
+
     setActionBusy('launch')
     setRunNotice('')
     try {
@@ -401,9 +453,12 @@ export default function RunPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(
-          isLlmBackedStep(selectedStep)
-            ? { llmMode: selectedLlmMode, llmModel: selectedLlmModel.trim() }
-            : {},
+          {
+            ...(isLlmBackedStep(selectedStep)
+              ? { llmMode: selectedLlmMode, llmModel: selectedLlmModel.trim() }
+              : {}),
+            ...(paidGenerationPayload ?? {}),
+          },
         ),
       })
       const json = await res.json()
@@ -720,6 +775,8 @@ export default function RunPage() {
     }
     actionHint = isLlmBackedStep(selectedStep)
       ? `LLM prévu : ${selectedLlmMode} · ${selectedLlmModel || 'à choisir'}. Le projet exécutera uniquement cette étape.`
+      : selectedStep === 7
+        ? 'Étape payante sensible : double confirmation + saisie manuelle obligatoires avant tout appel provider.'
       : 'Le projet exécutera uniquement cette étape, puis se remettra en pause pour validation.'
   } else if (canRelaunchCurrentStep) {
     primaryAction = {

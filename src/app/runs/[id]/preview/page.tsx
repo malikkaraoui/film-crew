@@ -83,6 +83,27 @@ const MODE_VARIANTS: Record<string, 'default' | 'secondary' | 'outline' | 'destr
   none: 'destructive',
 }
 
+async function collectPaidSceneConfirmation(sceneIndex: number): Promise<null | {
+  confirmPaidGeneration: true
+  confirmationText: string
+}> {
+  const proceed = window.confirm(
+    `⚠️ Régénération vidéo payante réelle pour la scène ${sceneIndex}. Continuer ?`,
+  )
+  if (!proceed) return null
+
+  const confirmationText = window.prompt(`Tape exactement SCENE ${sceneIndex} pour autoriser cette régénération payante`)?.trim()
+  if (confirmationText !== `SCENE ${sceneIndex}`) {
+    window.alert('Confirmation invalide. Régénération annulée.')
+    return null
+  }
+
+  return {
+    confirmPaidGeneration: true,
+    confirmationText,
+  }
+}
+
 export default function PreviewPage() {
   const { id } = useParams<{ id: string }>()
   const [clips, setClips] = useState<Clip[]>([])
@@ -206,6 +227,12 @@ export default function PreviewPage() {
   }
 
   async function handleRegenerate(type: 'storyboard' | 'video', sceneIndex: number) {
+    let paidPayload: { confirmPaidGeneration: true; confirmationText: string } | null = null
+    if (type === 'video') {
+      paidPayload = await collectPaidSceneConfirmation(sceneIndex)
+      if (!paidPayload) return
+    }
+
     setRegenerating((prev) => ({ ...prev, [sceneIndex]: true }))
     setRegenResult((prev) => {
       const next = { ...prev }
@@ -226,6 +253,7 @@ export default function PreviewPage() {
                 negativePrompt: promptDrafts[sceneIndex].negativePrompt,
               }
             : {}),
+          ...(paidPayload ?? {}),
         }),
       })
       const json = await res.json()

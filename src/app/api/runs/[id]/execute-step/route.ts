@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { getRunById, getRunSteps, getRunningRun } from '@/lib/db/queries/runs'
 import { executeSingleStep } from '@/lib/pipeline/engine'
@@ -15,6 +16,7 @@ import {
 } from '@/lib/runs/project-config'
 
 const TERMINAL_STATUSES = ['completed', 'killed']
+const PAID_GENERATION_CONFIRMATION_TEXT = 'GENERATION PAYANTE'
 
 export async function POST(
   request: Request,
@@ -60,6 +62,9 @@ export async function POST(
     const body = await request.json().catch(() => ({})) as {
       llmMode?: 'local' | 'cloud'
       llmModel?: string
+      confirmPaidGeneration?: boolean
+      confirmationText?: string
+      acknowledgedSceneCount?: number
     }
 
     if (!currentRunStep) {
@@ -70,6 +75,55 @@ export async function POST(
     }
 
     const storagePath = join(process.cwd(), 'storage', 'runs', id)
+
+    if (currentStep === 7) {
+      let promptCount = 0
+      try {
+        const promptData = JSON.parse(await readFile(join(storagePath, 'prompts.json'), 'utf-8')) as { prompts?: unknown[] }
+        promptCount = Array.isArray(promptData.prompts) ? promptData.prompts.length : 0
+      } catch {
+        promptCount = 0
+      }
+
+      if (!body.confirmPaidGeneration) {
+        return NextResponse.json(
+          {
+            error: {
+              code: 'PAID_GENERATION_CONFIRMATION_REQUIRED',
+              message: 'Génération payante bloquée : confirmation explicite requise avant de lancer l’étape 7.',
+              expectedSceneCount: promptCount,
+            },
+          },
+          { status: 409 },
+        )
+      }
+
+      if ((body.confirmationText ?? '').trim() !== PAID_GENERATION_CONFIRMATION_TEXT) {
+        return NextResponse.json(
+          {
+            error: {
+              code: 'PAID_GENERATION_TEXT_MISMATCH',
+              message: `Tape exactement "${PAID_GENERATION_CONFIRMATION_TEXT}" pour autoriser la génération payante.`,
+              expectedSceneCount: promptCount,
+            },
+          },
+          { status: 409 },
+        )
+      }
+
+      if ((body.acknowledgedSceneCount ?? -1) !== promptCount) {
+        return NextResponse.json(
+          {
+            error: {
+              code: 'PAID_GENERATION_SCENE_COUNT_MISMATCH',
+              message: `Le nombre de scènes à générer doit être confirmé explicitement (${promptCount}).`,
+              expectedSceneCount: promptCount,
+            },
+          },
+          { status: 409 },
+        )
+      }
+    }
 
     if (isLlmBackedStep(currentStep)) {
       const projectConfig = await readProjectConfig(storagePath)

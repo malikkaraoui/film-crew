@@ -32,7 +32,14 @@ export async function POST(
 ) {
   const { id } = await params
 
-  let body: { type: 'storyboard' | 'video'; sceneIndex: number; prompt?: string; negativePrompt?: string }
+  let body: {
+    type: 'storyboard' | 'video'
+    sceneIndex: number
+    prompt?: string
+    negativePrompt?: string
+    confirmPaidGeneration?: boolean
+    confirmationText?: string
+  }
   try {
     body = await request.json()
   } catch {
@@ -54,6 +61,33 @@ export async function POST(
       { error: { code: 'BAD_REQUEST', message: 'type doit être "storyboard" ou "video"' } },
       { status: 400 },
     )
+  }
+
+  if (type === 'video') {
+    if (!body.confirmPaidGeneration) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'PAID_REGEN_CONFIRMATION_REQUIRED',
+            message: 'Régénération vidéo payante bloquée : confirmation explicite requise pour cette scène.',
+          },
+        },
+        { status: 409 },
+      )
+    }
+
+    const expectedText = `SCENE ${sceneIndex}`
+    if ((body.confirmationText ?? '').trim() !== expectedText) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'PAID_REGEN_TEXT_MISMATCH',
+            message: `Tape exactement "${expectedText}" pour autoriser cette régénération vidéo payante.`,
+          },
+        },
+        { status: 409 },
+      )
+    }
   }
 
   const storagePath = join(process.cwd(), 'storage', 'runs', id)
