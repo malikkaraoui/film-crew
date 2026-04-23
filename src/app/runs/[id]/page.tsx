@@ -647,9 +647,7 @@ export default function RunPage() {
       onClick: handleLaunchCurrentStep,
       busy: actionBusy === 'launch',
     }
-    actionHint = isLlmBackedStep(selectedStep)
-      ? `LLM prévu : ${selectedLlmMode} · ${selectedLlmModel || 'à choisir'}. Cette relance réécrasera les livrables aval.`
-      : 'Cette relance réécrasera les livrables aval déjà produits à partir de cette étape.'
+    actionHint = ''
   } else if (canRewindToSelectedStep) {
     primaryAction = {
       label: actionBusy === 'rewind' ? 'Repositionnement...' : 'Repartir depuis cette étape',
