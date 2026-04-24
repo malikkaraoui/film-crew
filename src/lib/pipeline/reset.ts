@@ -9,7 +9,7 @@ const STEP_ARTIFACTS: Record<number, string[]> = {
   4: ['storyboard-blueprint.json', 'storyboard-blueprint-raw.txt'],
   5: ['storyboard', 'failover-log.json'],
   6: ['prompts.json', 'prompt-manifest.json'],
-  7: ['generation-manifest.json', 'clips', 'audio', 'tts', 'tts_manifest.json', 'subtitles'],
+  7: ['generation-manifest.json', 'clips', 'audio', 'tts', 'tts_manifest.json', 'audio_timeline.json', 'subtitles'],
   8: ['preview-manifest.json', 'final'],
   9: ['publish-manifest.json'],
 }
