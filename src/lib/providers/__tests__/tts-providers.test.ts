@@ -1,5 +1,84 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
+// ─── readWavDurationFromBuffer ──────────────────────────────────────────────
+
+describe('readWavDurationFromBuffer', () => {
+  it('lit la durée réelle d\'un WAV PCM 16bit mono 44100Hz', async () => {
+    const { readWavDurationFromBuffer } = await import('../tts/kokoro')
+
+    // Construire un WAV synthétique : 1 seconde, 44100Hz, 16bit, mono
+    const sampleRate = 44100
+    const numChannels = 1
+    const bitsPerSample = 16
+    const numSamples = sampleRate // 1 seconde
+    const dataSize = numSamples * numChannels * (bitsPerSample / 8)
+    const headerSize = 44
+    const buf = Buffer.alloc(headerSize + dataSize)
+
+    // RIFF header
+    buf.write('RIFF', 0)
+    buf.writeUInt32LE(36 + dataSize, 4)
+    buf.write('WAVE', 8)
+
+    // fmt chunk
+    buf.write('fmt ', 12)
+    buf.writeUInt32LE(16, 16) // chunk size
+    buf.writeUInt16LE(1, 20)  // PCM
+    buf.writeUInt16LE(numChannels, 22)
+    buf.writeUInt32LE(sampleRate, 24)
+    buf.writeUInt32LE(sampleRate * numChannels * bitsPerSample / 8, 28) // byte rate
+    buf.writeUInt16LE(numChannels * bitsPerSample / 8, 32) // block align
+    buf.writeUInt16LE(bitsPerSample, 34)
+
+    // data chunk
+    buf.write('data', 36)
+    buf.writeUInt32LE(dataSize, 40)
+
+    const duration = readWavDurationFromBuffer(buf)
+    expect(duration).toBeCloseTo(1.0, 2)
+  })
+
+  it('lit la durée d\'un WAV stéréo 24000Hz', async () => {
+    const { readWavDurationFromBuffer } = await import('../tts/kokoro')
+
+    const sampleRate = 24000
+    const numChannels = 2
+    const bitsPerSample = 16
+    const numSamples = sampleRate * 3 // 3 secondes
+    const dataSize = numSamples * numChannels * (bitsPerSample / 8)
+    const buf = Buffer.alloc(44 + dataSize)
+
+    buf.write('RIFF', 0)
+    buf.writeUInt32LE(36 + dataSize, 4)
+    buf.write('WAVE', 8)
+    buf.write('fmt ', 12)
+    buf.writeUInt32LE(16, 16)
+    buf.writeUInt16LE(1, 20)
+    buf.writeUInt16LE(numChannels, 22)
+    buf.writeUInt32LE(sampleRate, 24)
+    buf.writeUInt32LE(sampleRate * numChannels * bitsPerSample / 8, 28)
+    buf.writeUInt16LE(numChannels * bitsPerSample / 8, 32)
+    buf.writeUInt16LE(bitsPerSample, 34)
+    buf.write('data', 36)
+    buf.writeUInt32LE(dataSize, 40)
+
+    const duration = readWavDurationFromBuffer(buf)
+    expect(duration).toBeCloseTo(3.0, 2)
+  })
+
+  it('retourne null pour un buffer trop petit', async () => {
+    const { readWavDurationFromBuffer } = await import('../tts/kokoro')
+    expect(readWavDurationFromBuffer(Buffer.from('too small'))).toBeNull()
+  })
+
+  it('retourne null pour un buffer non-WAV', async () => {
+    const { readWavDurationFromBuffer } = await import('../tts/kokoro')
+    const buf = Buffer.alloc(100)
+    buf.write('NOT_RIFF', 0)
+    expect(readWavDurationFromBuffer(buf)).toBeNull()
+  })
+})
+
 // ─── Kokoro ──────────────────────────────────────────────────────────────────
 
 describe('kokoroProvider', () => {
@@ -33,10 +112,28 @@ describe('kokoroProvider', () => {
     expect(kokoroProvider.estimateCost({})).toBe(0)
   })
 
-  it('synthesize retourne AudioResult avec costEur 0', async () => {
-    const fakeWav = Buffer.from('RIFF....fakewav')
+  it('synthesize retourne AudioResult avec durée réelle si WAV valide', async () => {
+    // Construire un vrai WAV : 0.5s, 24000Hz, mono, 16bit
+    const sampleRate = 24000
+    const numSamples = sampleRate / 2 // 0.5s
+    const dataSize = numSamples * 2 // 16bit mono
+    const wav = Buffer.alloc(44 + dataSize)
+    wav.write('RIFF', 0)
+    wav.writeUInt32LE(36 + dataSize, 4)
+    wav.write('WAVE', 8)
+    wav.write('fmt ', 12)
+    wav.writeUInt32LE(16, 16)
+    wav.writeUInt16LE(1, 20)
+    wav.writeUInt16LE(1, 22)
+    wav.writeUInt32LE(sampleRate, 24)
+    wav.writeUInt32LE(sampleRate * 2, 28)
+    wav.writeUInt16LE(2, 32)
+    wav.writeUInt16LE(16, 34)
+    wav.write('data', 36)
+    wav.writeUInt32LE(dataSize, 40)
+
     vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(fakeWav, { status: 200 }) as Response,
+      new Response(wav, { status: 200 }) as Response,
     )
 
     const { kokoroProvider } = await import('../tts/kokoro')
@@ -44,6 +141,19 @@ describe('kokoroProvider', () => {
 
     expect(result.costEur).toBe(0)
     expect(result.filePath).toMatch(/tts-kokoro-\d+\.wav$/)
+    expect(result.duration).toBeCloseTo(0.5, 1)
+  })
+
+  it('synthesize fallback sur estimation si WAV invalide', async () => {
+    const fakeWav = Buffer.from('RIFF....fakewav')
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(fakeWav, { status: 200 }) as Response,
+    )
+
+    const { kokoroProvider } = await import('../tts/kokoro')
+    const result = await kokoroProvider.synthesize('Bonjour le monde test', 'default', 'fr', undefined)
+
+    expect(result.costEur).toBe(0)
     expect(result.duration).toBeGreaterThan(0)
   })
 
