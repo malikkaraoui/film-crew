@@ -78,6 +78,73 @@ export async function generateSRT(
   return srtPath
 }
 
+// ─── SRT exact depuis transcript word-level (Lot 1B) ─────────────────────────
+
+import type { WhisperSegment } from './whisper-bridge'
+
+/**
+ * Génère un SRT exact depuis un transcript word-level (faster-whisper).
+ * Les timestamps viennent directement du moteur de transcription — pas de calcul proportionnel.
+ */
+export async function generateSRTFromWhisper(
+  segments: WhisperSegment[],
+  outputDir: string,
+): Promise<string> {
+  const validSegments = segments.filter((s) => s.text.trim().length > 0)
+  if (validSegments.length === 0) throw new Error('Aucun segment whisper pour générer SRT')
+
+  const srtLines: string[] = []
+  let counter = 1
+
+  for (const seg of validSegments) {
+    // Découper les segments longs (>8s) en sous-blocs basés sur les mots
+    const MAX_DURATION = 8
+    const segDuration = seg.end_s - seg.start_s
+
+    if (segDuration <= MAX_DURATION || seg.words.length === 0) {
+      srtLines.push(`${counter}`)
+      srtLines.push(`${formatSrtTime(seg.start_s)} --> ${formatSrtTime(seg.end_s)}`)
+      srtLines.push(seg.text)
+      srtLines.push('')
+      counter++
+      continue
+    }
+
+    // Split en sous-blocs de ~MAX_DURATION secondes en coupant aux mots
+    let blockStart = seg.words[0].start_s
+    let blockWords: string[] = []
+
+    for (const w of seg.words) {
+      blockWords.push(w.word)
+      const blockDuration = w.end_s - blockStart
+
+      if (blockDuration >= MAX_DURATION) {
+        srtLines.push(`${counter}`)
+        srtLines.push(`${formatSrtTime(blockStart)} --> ${formatSrtTime(w.end_s)}`)
+        srtLines.push(blockWords.join(' '))
+        srtLines.push('')
+        counter++
+        blockStart = w.end_s
+        blockWords = []
+      }
+    }
+
+    // Flush le reste
+    if (blockWords.length > 0) {
+      const lastWord = seg.words[seg.words.length - 1]
+      srtLines.push(`${counter}`)
+      srtLines.push(`${formatSrtTime(blockStart)} --> ${formatSrtTime(lastWord.end_s)}`)
+      srtLines.push(blockWords.join(' '))
+      srtLines.push('')
+      counter++
+    }
+  }
+
+  const srtPath = join(outputDir, 'subtitles.srt')
+  await writeFile(srtPath, srtLines.join('\n'), 'utf-8')
+  return srtPath
+}
+
 /**
  * Construit le filtre FFmpeg subtitles avec force_style ASS.
  * Compatible avec les conventions du module viral (même structure force_style).
