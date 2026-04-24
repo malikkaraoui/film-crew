@@ -6,8 +6,8 @@ import type { PipelineStep, StepContext, StepResult } from '../types'
 import { detectEncoder, encoderArgs, probeMediaDuration, checkLibass } from '../ffmpeg-media'
 import { buildFilterGraph, type PreviewPipelineConfig } from '../ffmpeg-graph'
 import { sanitizeTransitionConfig, DEFAULT_TRANSITION, DEFAULT_TRANSITION_DURATION, type XfadeTransition, type TransitionConfig } from '../ffmpeg-transitions'
-import { generateSRT, generateSRTFromWhisper, type SubtitleStyle } from '../subtitles'
-import { transcribeWordLevel } from '../whisper-bridge'
+import { type SubtitleStyle } from '../subtitles'
+import { generateSubtitles } from '../subtitle-generator'
 
 // Taxonomie fixe (registre risques R6) :
 //   video_finale  = clips vidéo réels assemblés
@@ -270,53 +270,14 @@ export const step7Preview: PipelineStep = {
     let srtPath: string | null = null
     let subtitleSource: 'whisper' | 'proportional' | null = null
     if (enableSubtitles && hasAudio) {
-      // Tentative 1 : transcription word-level via faster-whisper
-      try {
-        const transcript = await transcribeWordLevel({
-          audio_path: audioPath!,
-          language: 'fr',
-          model_size: 'base',
-          output_path: join(finalDir, 'transcript-word-level.json'),
-        })
-
-        if (transcript && transcript.segments.length > 0) {
-          srtPath = await generateSRTFromWhisper(transcript.segments, finalDir)
-          subtitleSource = 'whisper'
-          logger.info({
-            event: 'srt_generated_whisper',
-            runId: ctx.runId,
-            path: srtPath,
-            word_count: transcript.word_count,
-            transcribe_time_s: transcript.transcribe_time_s,
-          })
-        }
-      } catch (e) {
-        logger.warn({ event: 'whisper_transcription_failed', runId: ctx.runId, error: (e as Error).message })
-      }
-
-      // Fallback : timing proportionnel si whisper échoue ou indisponible
-      if (!srtPath) {
-        try {
-          const structure = JSON.parse(
-            await readFile(join(ctx.storagePath, 'structure.json'), 'utf-8'),
-          )
-          const sceneDialogues = (structure.scenes ?? [])
-            .map((s: { dialogue?: string }, i: number) => ({
-              sceneIndex: i,
-              dialogue: s.dialogue ?? '',
-            }))
-            .filter((s: { dialogue: string }) => s.dialogue.trim().length > 0)
-
-          if (sceneDialogues.length > 0) {
-            const audioDuration = await probeMediaDuration(audioPath!, 60)
-            srtPath = await generateSRT(sceneDialogues, audioDuration, finalDir)
-            subtitleSource = 'proportional'
-            logger.info({ event: 'srt_generated_proportional', runId: ctx.runId, path: srtPath })
-          }
-        } catch (e) {
-          logger.warn({ event: 'srt_generation_failed', runId: ctx.runId, error: (e as Error).message })
-        }
-      }
+      const srtResult = await generateSubtitles({
+        audioPath: audioPath!,
+        storagePath: ctx.storagePath,
+        outputDir: finalDir,
+        runId: ctx.runId,
+      })
+      srtPath = srtResult?.srtPath ?? null
+      subtitleSource = srtResult?.source ?? null
     }
 
     // ─── Concat.txt pour clips (conservé pour compatibilité + fallback) ──────
