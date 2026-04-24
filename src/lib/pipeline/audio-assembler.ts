@@ -1,3 +1,7 @@
+/**
+ * @deprecated Produit l'ancien artefact `audio_preview.wav`.
+ * Remplacé côté pipeline canonique par `step-4c-audio.ts` + `src/lib/audio/mix-master.ts`.
+ */
 import { readFile, writeFile, mkdir, rm } from 'fs/promises'
 import { join } from 'path'
 import { spawn } from 'child_process'

@@ -51,4 +51,61 @@ describe('resetRunFromStep', () => {
     expect(existsSync(join(storagePath, 'audio'))).toBe(true)
     expect(existsSync(join(storagePath, 'subtitles'))).toBe(true)
   })
+
+  it('préserve l’audio master lors d’un reset depuis le step 7 (Prompts)', async () => {
+    const storagePath = mkdtempSync(join(tmpdir(), 'filmcrew-reset-'))
+    tempDirs.push(storagePath)
+
+    mkdirSync(join(storagePath, 'audio', 'scenes'), { recursive: true })
+    mkdirSync(join(storagePath, 'clips'), { recursive: true })
+    mkdirSync(join(storagePath, 'storyboard'), { recursive: true })
+    mkdirSync(join(storagePath, 'final'), { recursive: true })
+    mkdirSync(join(storagePath, 'subtitles'), { recursive: true })
+
+    writeFileSync(join(storagePath, 'audio', 'audio-master-manifest.json'), '{}')
+    writeFileSync(join(storagePath, 'audio', 'master.wav'), 'master')
+    writeFileSync(join(storagePath, 'prompts.json'), '{}')
+    writeFileSync(join(storagePath, 'prompt-manifest.json'), '{}')
+    writeFileSync(join(storagePath, 'generation-manifest.json'), '{}')
+
+    const { resetRunFromStep } = await import('../reset')
+
+    await resetRunFromStep({
+      runId: 'run-reset-test',
+      storagePath,
+      stepNumber: 7,
+    })
+
+    expect(existsSync(join(storagePath, 'audio', 'audio-master-manifest.json'))).toBe(true)
+    expect(existsSync(join(storagePath, 'audio', 'master.wav'))).toBe(true)
+    expect(existsSync(join(storagePath, 'prompts.json'))).toBe(false)
+    expect(existsSync(join(storagePath, 'prompt-manifest.json'))).toBe(false)
+    expect(existsSync(join(storagePath, 'generation-manifest.json'))).toBe(false)
+  })
+
+  it('supprime les artefacts audio lors d’un reset depuis le step 6 (Audio Package)', async () => {
+    const storagePath = mkdtempSync(join(tmpdir(), 'filmcrew-reset-'))
+    tempDirs.push(storagePath)
+
+    mkdirSync(join(storagePath, 'audio', 'scenes'), { recursive: true })
+    mkdirSync(join(storagePath, 'storyboard'), { recursive: true })
+    mkdirSync(join(storagePath, 'final'), { recursive: true })
+    mkdirSync(join(storagePath, 'subtitles'), { recursive: true })
+
+    writeFileSync(join(storagePath, 'audio', 'audio-master-manifest.json'), '{}')
+    writeFileSync(join(storagePath, 'audio', 'master.wav'), 'master')
+    writeFileSync(join(storagePath, 'audio', 'scenes', '0.wav'), 'scene')
+
+    const { resetRunFromStep } = await import('../reset')
+
+    await resetRunFromStep({
+      runId: 'run-reset-test',
+      storagePath,
+      stepNumber: 6,
+    })
+
+    expect(existsSync(join(storagePath, 'audio', 'audio-master-manifest.json'))).toBe(false)
+    expect(existsSync(join(storagePath, 'audio', 'master.wav'))).toBe(false)
+    expect(existsSync(join(storagePath, 'audio', 'scenes'))).toBe(false)
+  })
 })

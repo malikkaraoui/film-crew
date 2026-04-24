@@ -4,6 +4,7 @@ import { step2Brainstorm } from '../steps/step-2-brainstorm'
 import { step3Json } from '../steps/step-3-json'
 import { step4VisualBlueprint } from '../steps/step-4-visual-blueprint'
 import { step4Storyboard } from '../steps/step-4-storyboard'
+import { step4cAudio } from '../steps/step-4c-audio'
 import { step5Prompts } from '../steps/step-5-prompts'
 import { step6Generation } from '../steps/step-6-generation'
 import { step7Preview } from '../steps/step-7-preview'
@@ -15,15 +16,15 @@ import { PIPELINE_STEP_NAMES, TOTAL_PIPELINE_STEPS } from '../constants'
  * 12A — E2E pipeline coeur
  *
  * Vérifie :
- * 1. Contrat des 9 steps (stepNumber, name, execute)
- * 2. Séquence ordonnée 1-9
+ * 1. Contrat des 10 steps (stepNumber, name, execute)
+ * 2. Séquence ordonnée 1-10
  * 3. Pas de trous dans la numérotation
  * 4. Step 1 (Idée) — happy path sans DB
  * 5. Step 1 — idée propagée correctement
  * 6. StepContext — structure complète
  * 7. StepResult — champs requis
  * 8. progressPct depuis completed steps
- * 9. Pipeline : 9 steps enregistrés
+ * 9. Pipeline : 10 steps enregistrés
  * 10. Noms canoniques des steps
  */
 
@@ -33,6 +34,7 @@ const ALL_STEPS: PipelineStep[] = [
   step3Json,
   step4VisualBlueprint,
   step4Storyboard,
+  step4cAudio,
   step5Prompts,
   step6Generation,
   // step7Preview et step8Publish non importés car ils dépendent de ffmpeg / externe
@@ -52,7 +54,7 @@ const BASE_CTX: StepContext = {
 
 describe('12A — E2E pipeline coeur', () => {
 
-  // ─── 1. Contrat des 9 steps ──────────────────────────────────────────────
+  // ─── 1. Contrat des 10 steps ─────────────────────────────────────────────
 
   describe('Contrat des steps importés', () => {
     it('chaque step a stepNumber, name et execute', () => {
@@ -78,7 +80,7 @@ describe('12A — E2E pipeline coeur', () => {
     })
   })
 
-  // ─── 2. Séquence ordonnée 1-9 ────────────────────────────────────────────
+  // ─── 2. Séquence ordonnée 1-10 ───────────────────────────────────────────
 
   describe('Séquence pipeline — numérotation canonique', () => {
     it('step 1 = Idée', () => {
@@ -106,23 +108,28 @@ describe('12A — E2E pipeline coeur', () => {
       expect(step4Storyboard.name).toBe('Storyboard')
     })
 
-    it('step 6 = Prompts Seedance', () => {
-      expect(step5Prompts.stepNumber).toBe(6)
+    it('step 6 = Audio Package', () => {
+      expect(step4cAudio.stepNumber).toBe(6)
+      expect(step4cAudio.name).toBe('Audio Package')
+    })
+
+    it('step 7 = Prompts Seedance', () => {
+      expect(step5Prompts.stepNumber).toBe(7)
       expect(step5Prompts.name).toBe('Prompts Seedance')
     })
 
-    it('step 7 = Génération', () => {
-      expect(step6Generation.stepNumber).toBe(7)
+    it('step 8 = Génération', () => {
+      expect(step6Generation.stepNumber).toBe(8)
       expect(step6Generation.name).toBe('Génération')
     })
 
-    it('step 8 = Preview', () => {
-      expect(step7Preview.stepNumber).toBe(8)
+    it('step 9 = Preview', () => {
+      expect(step7Preview.stepNumber).toBe(9)
       expect(step7Preview.name).toBe('Preview')
     })
 
-    it('step 9 = Publication', () => {
-      expect(step8Publish.stepNumber).toBe(9)
+    it('step 10 = Publication', () => {
+      expect(step8Publish.stepNumber).toBe(10)
       expect(step8Publish.name).toBe('Publication')
     })
   })
@@ -137,10 +144,10 @@ describe('12A — E2E pipeline coeur', () => {
       }
     })
 
-    it('les noms canoniques couvrent les 9 positions', () => {
+    it('les noms canoniques couvrent les 10 positions', () => {
       expect(STEP_NAMES).toHaveLength(TOTAL_PIPELINE_STEPS)
       expect(STEP_NAMES[0]).toBe('Idée')
-      expect(STEP_NAMES[8]).toBe('Publication')
+      expect(STEP_NAMES[9]).toBe('Publication')
     })
   })
 
@@ -233,19 +240,19 @@ describe('12A — E2E pipeline coeur', () => {
       return { pct: Math.round((done / TOTAL_PIPELINE_STEPS) * 100), done, total: TOTAL_PIPELINE_STEPS }
     }
 
-    it('0/9 → 0%', () => {
+    it('0/10 → 0%', () => {
       const steps = Array.from({ length: TOTAL_PIPELINE_STEPS }, (_, i) => ({ stepNumber: i + 1, status: 'pending' }))
       expect(computeProgress(steps).pct).toBe(0)
     })
 
-    it('1/9 complété (step 1) → 11%', () => {
+    it('1/10 complété (step 1) → 10%', () => {
       const steps = Array.from({ length: TOTAL_PIPELINE_STEPS }, (_, i) => ({
         stepNumber: i + 1, status: i === 0 ? 'completed' : 'pending',
       }))
-      expect(computeProgress(steps).pct).toBe(11)
+      expect(computeProgress(steps).pct).toBe(10)
     })
 
-    it('9/9 complétés → 100%', () => {
+    it('10/10 complétés → 100%', () => {
       const steps = Array.from({ length: TOTAL_PIPELINE_STEPS }, (_, i) => ({ stepNumber: i + 1, status: 'completed' }))
       expect(computeProgress(steps).pct).toBe(100)
     })
@@ -254,14 +261,14 @@ describe('12A — E2E pipeline coeur', () => {
       const steps = Array.from({ length: TOTAL_PIPELINE_STEPS }, (_, i) => ({
         stepNumber: i + 1, status: i < 2 ? 'completed' : i === 2 ? 'failed' : 'pending',
       }))
-      expect(computeProgress(steps).pct).toBe(22) // 2/9 = 22%
+      expect(computeProgress(steps).pct).toBe(20) // 2/10 = 20%
     })
   })
 
-  // ─── 9. Pipeline — 9 steps enregistrés ──────────────────────────────────
+  // ─── 9. Pipeline — 10 steps enregistrés ─────────────────────────────────
 
-  describe('Pipeline — 9 steps enregistrés', () => {
-    it('STEP_NAMES a 9 entrées', () => {
+  describe('Pipeline — 10 steps enregistrés', () => {
+    it('STEP_NAMES a 10 entrées', () => {
       expect(STEP_NAMES).toHaveLength(TOTAL_PIPELINE_STEPS)
     })
 
@@ -270,20 +277,24 @@ describe('12A — E2E pipeline coeur', () => {
     })
 
     it('Publication en dernière position', () => {
-      expect(STEP_NAMES[8]).toBe('Publication')
+      expect(STEP_NAMES[9]).toBe('Publication')
     })
 
     it('Blueprint visuel en position 4', () => {
       expect(STEP_NAMES[3]).toBe('Blueprint visuel')
     })
+
+    it('Audio Package en position 6', () => {
+      expect(STEP_NAMES[5]).toBe('Audio Package')
+    })
   })
 
   // ─── 10. Noms canoniques ─────────────────────────────────────────────────
 
-  describe('Noms canoniques des 9 steps', () => {
+  describe('Noms canoniques des 10 steps', () => {
     const EXPECTED = [
       'Idée', 'Brainstorm', 'JSON structuré', 'Blueprint visuel',
-      'Storyboard', 'Prompts Seedance', 'Génération', 'Preview', 'Publication',
+      'Storyboard', 'Audio Package', 'Prompts Seedance', 'Génération', 'Preview', 'Publication',
     ]
 
     EXPECTED.forEach((name, i) => {

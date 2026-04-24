@@ -1,3 +1,7 @@
+/**
+ * @deprecated Remplacé par `step-4c-audio.ts` + `src/lib/audio/mix-master.ts`.
+ * Conserve ce module temporairement pour compatibilité legacy et tests existants.
+ */
 import { writeFile, rm } from 'fs/promises'
 import { join } from 'path'
 import { renderDialogueToTTS } from './tts-renderer'

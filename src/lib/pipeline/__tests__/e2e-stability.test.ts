@@ -141,11 +141,11 @@ describe('12D — Cycle nominal — transitions d\'état', () => {
     expect(run.totalCost).toBe(0)
   })
 
-  it('après step 1 : status=running, 11% progress', () => {
+  it('après step 1 : status=running, 10% progress', () => {
     let run = createRun('nominal-2')
     run = executeStep(run)
     expect(run.status).toBe('running')
-    expect(progressPct(run)).toBe(11)
+    expect(progressPct(run)).toBe(10)
   })
 
   it('run complet : status=completed, 100% progress', () => {
@@ -269,12 +269,12 @@ describe('12D — Scénario kill — état final cohérent', () => {
   })
 
   it('progressPct d\'un run killed = steps complétés avant le kill', () => {
-    // Kill après step 3 → steps 1+2 complétés → 22%
+    // Kill après step 3 → steps 1+2 complétés → 20%
     const steps = Array.from({ length: TOTAL_PIPELINE_STEPS }, (_, i) => ({
       status: i < 2 ? 'completed' : 'pending',
     }))
     const pct = Math.round(steps.filter((s) => s.status === 'completed').length / TOTAL_PIPELINE_STEPS * 100)
-    expect(pct).toBe(22)
+    expect(pct).toBe(20)
   })
 })
 
@@ -327,7 +327,7 @@ describe('12D — Scénario échec step — traçabilité', () => {
   it('progressPct run failed = steps complétés avant l\'échec', () => {
     const r = simulateFailAt(5) // 4 steps complétés, step 5 failed
     const pct = Math.round(r.steps.filter((s) => s.status === 'completed').length / TOTAL_PIPELINE_STEPS * 100)
-    expect(pct).toBe(44) // 4/9 = 44%
+    expect(pct).toBe(40) // 4/10 = 40%
   })
 })
 
@@ -347,7 +347,7 @@ describe('12D — Idempotence des contrôles superviseur', () => {
       { status: 'failed' }, ...Array(TOTAL_PIPELINE_STEPS - 3).fill({ status: 'pending' }),
     ]}
     const pct = Math.round(failedAt3.steps.filter((s) => s.status === 'completed').length / TOTAL_PIPELINE_STEPS * 100)
-    expect(pct).toBe(22) // 2/9
+    expect(pct).toBe(20) // 2/10 = 20%
   })
 
   it('POST /api/runs/recovery idempotent : 0 zombie → recovered=0', () => {

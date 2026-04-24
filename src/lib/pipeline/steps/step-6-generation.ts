@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'fs/promises'
+import { access, readFile, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { executeWithFailover } from '@/lib/providers/failover'
 import { db } from '@/lib/db/connection'
@@ -18,6 +18,48 @@ type PromptEntry = {
   providerPrompts?: ProviderPromptMap
 }
 
+type StructureForAudio = {
+  scenes?: { dialogue?: string }[]
+  tone?: string
+  style?: string
+}
+
+type AudioMasterManifestRef = {
+  masterFilePath?: string | null
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function resolveMasterAudioPath(storagePath: string, runId: string): Promise<string | null> {
+  try {
+    const raw = await readFile(join(storagePath, 'audio', 'audio-master-manifest.json'), 'utf-8')
+    const manifest = JSON.parse(raw) as AudioMasterManifestRef
+    const masterFilePath = manifest.masterFilePath ?? null
+
+    if (!masterFilePath) {
+      return null
+    }
+
+    if (await fileExists(masterFilePath)) {
+      logger.info({ event: 'master_audio_reused', runId, path: masterFilePath })
+      return masterFilePath
+    }
+
+    logger.warn({ event: 'master_audio_missing', runId, path: masterFilePath })
+    return null
+  } catch {
+    logger.info({ event: 'generation_master_audio_unavailable', runId })
+    return null
+  }
+}
+
 export const step6Generation: PipelineStep = {
   name: 'Génération',
   stepNumber: 8,
@@ -26,13 +68,22 @@ export const step6Generation: PipelineStep = {
     const projectConfig = await readProjectConfig(ctx.storagePath)
     const referenceImageUrls = projectConfig?.referenceImages?.urls ?? []
     const generationMode = projectConfig?.generationMode ?? 'manual'
+    const masterAudioPath = await resolveMasterAudioPath(ctx.storagePath, ctx.runId)
+
+    let structure: StructureForAudio | null = null
+    try {
+      const raw = await readFile(join(ctx.storagePath, 'structure.json'), 'utf-8')
+      structure = JSON.parse(raw) as StructureForAudio
+    } catch (e) {
+      logger.warn({ event: 'structure_unavailable_for_audio', runId: ctx.runId, error: (e as Error).message })
+    }
 
     if (generationMode !== 'automatic') {
       await writeFile(
         join(ctx.storagePath, 'generation-manifest.json'),
         JSON.stringify({
           clips: [],
-          audioPath: null,
+          audioPath: masterAudioPath,
           musicPath: null,
           generationMode: 'manual',
           note: 'Génération provider désactivée en automatique — lancer manuellement scène par scène.',
@@ -52,23 +103,23 @@ export const step6Generation: PipelineStep = {
         outputData: {
           clipCount: 0,
           totalPrompts: 0,
-          hasAudio: false,
+          hasAudio: !!masterAudioPath,
           generationMode: 'manual',
           autoGenerationSkipped: true,
         },
       }
     }
 
-    // Lire les prompts
     let promptData: { prompts: PromptEntry[] }
     try {
       const raw = await readFile(join(ctx.storagePath, 'prompts.json'), 'utf-8')
-      promptData = JSON.parse(raw)
+      promptData = JSON.parse(raw) as { prompts: PromptEntry[] }
     } catch {
       return { success: false, costEur: 0, outputData: null, error: 'prompts.json introuvable' }
     }
 
     let totalCost = 0
+    const clipsDir = join(ctx.storagePath, 'clips')
     const generatedClips: {
       sceneIndex: number
       filePath: string
@@ -79,10 +130,8 @@ export const step6Generation: PipelineStep = {
       failoverChain?: { original: string; fallback: string; reason: string }
     }[] = []
 
-    // Générer les clips vidéo
     for (const entry of promptData.prompts) {
       try {
-        const clipsDir = join(ctx.storagePath, 'clips')
         const { result, provider, failover } = await executeWithFailover(
           'video',
           async (p) => {
@@ -90,6 +139,7 @@ export const step6Generation: PipelineStep = {
             if (video.name === 'sketch-local') {
               throw new Error('sketch-local est désactivé pour le pipeline standard : brouillon texte local non acceptable comme clip final')
             }
+
             const resolvedPrompt = resolveProviderPrompt(entry.providerPrompts, video.name, entry.prompt)
             return video.generate(resolvedPrompt, {
               resolution: '720p',
@@ -104,7 +154,6 @@ export const step6Generation: PipelineStep = {
 
         totalCost += result.costEur
 
-        // Persister le clip en DB
         await db.insert(clip).values({
           id: crypto.randomUUID(),
           runId: ctx.runId,
@@ -124,7 +173,9 @@ export const step6Generation: PipelineStep = {
           costEur: result.costEur,
           providerUsed: provider.name,
           failoverOccurred: !!failover,
-          ...(failover ? { failoverChain: { original: failover.original, fallback: failover.fallback, reason: failover.reason } } : {}),
+          ...(failover
+            ? { failoverChain: { original: failover.original, fallback: failover.fallback, reason: failover.reason } }
+            : {}),
         })
 
         logger.info({
@@ -155,40 +206,36 @@ export const step6Generation: PipelineStep = {
       }
     }
 
-    // Générer la voix TTS
-    let audioPath: string | null = null
-    try {
-      const structure = JSON.parse(
-        await readFile(join(ctx.storagePath, 'structure.json'), 'utf-8'),
-      )
+    let audioPath: string | null = masterAudioPath
+    if (!audioPath && structure?.scenes?.length) {
       const narration = structure.scenes
-        .map((s: { dialogue: string }) => s.dialogue)
+        .map((scene) => scene.dialogue ?? '')
         .filter(Boolean)
         .join(' ')
 
       if (narration) {
-        const { result } = await executeWithFailover(
-          'tts',
-          async (p) => {
-            const tts = p as TTSProvider
-            return tts.synthesize(narration, 'default', 'fr', ctx.storagePath)
-          },
-          ctx.runId,
-        )
-        totalCost += result.costEur
-        audioPath = result.filePath
+        try {
+          const { result } = await executeWithFailover(
+            'tts',
+            async (p) => {
+              const tts = p as TTSProvider
+              return tts.synthesize(narration, 'default', 'fr', ctx.storagePath)
+            },
+            ctx.runId,
+          )
+          totalCost += result.costEur
+          audioPath = result.filePath
+        } catch (e) {
+          logger.warn({ event: 'tts_failed', runId: ctx.runId, error: (e as Error).message })
+        }
       }
-    } catch (e) {
-      logger.warn({ event: 'tts_failed', runId: ctx.runId, error: (e as Error).message })
+    } else if (!audioPath) {
+      logger.warn({ event: 'tts_skipped_no_structure', runId: ctx.runId })
     }
 
-    // Sélection musique de fond
     let musicPath: string | null = null
     try {
-      const structure = JSON.parse(
-        await readFile(join(ctx.storagePath, 'structure.json'), 'utf-8'),
-      )
-      const tone = structure.tone ?? structure.style ?? undefined
+      const tone = structure?.tone ?? structure?.style ?? undefined
       musicPath = await pickBackgroundMusic(tone, ctx.runId)
       if (musicPath) {
         logger.info({ event: 'music_selected', runId: ctx.runId, path: musicPath, tone })
@@ -197,19 +244,22 @@ export const step6Generation: PipelineStep = {
       logger.warn({ event: 'music_selection_failed', runId: ctx.runId, error: (e as Error).message })
     }
 
-    // Sauvegarder le manifest de génération
     await writeFile(
       join(ctx.storagePath, 'generation-manifest.json'),
-      JSON.stringify({
-        clips: generatedClips,
-        audioPath,
-        musicPath,
-        generatedAt: new Date().toISOString(),
-      }, null, 2),
+      JSON.stringify(
+        {
+          clips: generatedClips,
+          audioPath,
+          musicPath,
+          generatedAt: new Date().toISOString(),
+        },
+        null,
+        2,
+      ),
     )
 
     return {
-      success: true, // on continue même avec 0 clips — les providers vidéo sont optionnels en V1
+      success: true,
       costEur: totalCost,
       outputData: {
         clipCount: generatedClips.length,

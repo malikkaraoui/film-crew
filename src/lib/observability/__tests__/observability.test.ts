@@ -38,7 +38,7 @@ describe('12A — Observabilité + queueing', () => {
       expect(progress.progressPct).toBeLessThanOrEqual(100)
     })
 
-    it('totalSteps = 9 (pipeline FILM CREW)', () => {
+    it('totalSteps = 10 (pipeline FILM CREW)', () => {
       const progress: RunProgress = {
         runId: 'r', status: 'pending', currentStep: null,
         totalSteps: TOTAL_PIPELINE_STEPS, progressPct: 0, elapsedMs: 0, totalCostEur: 0, steps: [],
@@ -182,20 +182,20 @@ describe('12A — Observabilité + queueing', () => {
       expect(calcPct(0)).toBe(0)
     })
 
-    it('4 steps complétés sur 9 → 44%', () => {
-      expect(calcPct(4)).toBe(44)
+    it('4 steps complétés sur 10 → 40%', () => {
+      expect(calcPct(4)).toBe(40)
     })
 
-    it('9 steps complétés sur 9 → 100%', () => {
-      expect(calcPct(9)).toBe(100)
+    it('10 steps complétés sur 10 → 100%', () => {
+      expect(calcPct(10)).toBe(100)
     })
 
-    it('3 steps complétés → 33.3% → arrondi 33%', () => {
-      expect(calcPct(3)).toBe(33)
+    it('3 steps complétés sur 10 → 30%', () => {
+      expect(calcPct(3)).toBe(30)
     })
 
-    it('1 step complété → 11.1% → arrondi 11%', () => {
-      expect(calcPct(1)).toBe(11)
+    it('1 step complété sur 10 → 10%', () => {
+      expect(calcPct(1)).toBe(10)
     })
   })
 
