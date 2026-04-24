@@ -1,0 +1,127 @@
+{
+  "version": "1.0",
+  "generatedAt": "2026-04-24T00:00:00.000Z",
+  "assets": [
+    {
+      "id": "music-calm-001",
+      "filename": "calm-piano-001.wav",
+      "description": "Piano solo, mélodie douce et apaisante",
+      "mood": "calme",
+      "tempo": "slow",
+      "bpm": 60,
+      "durationS": 120.0,
+      "loopable": true,
+      "tags": ["piano", "calme", "doux", "instrumental"]
+    },
+    {
+      "id": "music-calm-002",
+      "filename": "ambient-pads-001.wav",
+      "description": "Nappes ambiantes, texture froide et sereine",
+      "mood": "calme",
+      "tempo": "slow",
+      "bpm": 70,
+      "durationS": 90.0,
+      "loopable": true,
+      "tags": ["ambient", "calme", "nappes", "instrumental"]
+    },
+    {
+      "id": "music-tension-001",
+      "filename": "tension-strings-001.wav",
+      "description": "Cordes en tension, atmosphère anxiogène",
+      "mood": "tension",
+      "tempo": "moderate",
+      "bpm": 90,
+      "durationS": 60.0,
+      "loopable": true,
+      "tags": ["cordes", "tension", "dramatique", "instrumental"]
+    },
+    {
+      "id": "music-tension-002",
+      "filename": "tension-pulse-001.wav",
+      "description": "Battement grave pulsé, montée de stress",
+      "mood": "tension",
+      "tempo": "fast",
+      "bpm": 120,
+      "durationS": 45.0,
+      "loopable": true,
+      "tags": ["tension", "pulsé", "grave", "électronique"]
+    },
+    {
+      "id": "music-epic-001",
+      "filename": "epic-orchestra-001.wav",
+      "description": "Orchestre épique, cuivres et percussions",
+      "mood": "épique",
+      "tempo": "fast",
+      "bpm": 130,
+      "durationS": 180.0,
+      "loopable": false,
+      "tags": ["orchestre", "épique", "cuivres", "percussions"]
+    },
+    {
+      "id": "music-epic-002",
+      "filename": "epic-rise-001.wav",
+      "description": "Montée épique progressive, climax final",
+      "mood": "épique",
+      "tempo": "moderate",
+      "bpm": 100,
+      "durationS": 90.0,
+      "loopable": false,
+      "tags": ["épique", "montée", "climax", "orchestral"]
+    },
+    {
+      "id": "music-melancholy-001",
+      "filename": "melancholy-cello-001.wav",
+      "description": "Violoncelle mélancolique, solo émouvant",
+      "mood": "mélancolie",
+      "tempo": "slow",
+      "bpm": 50,
+      "durationS": 150.0,
+      "loopable": true,
+      "tags": ["violoncelle", "mélancolie", "solo", "émouvant"]
+    },
+    {
+      "id": "music-melancholy-002",
+      "filename": "melancholy-guitar-001.wav",
+      "description": "Guitare acoustique, arpèges doux et nostalgiques",
+      "mood": "mélancolie",
+      "tempo": "slow",
+      "bpm": 65,
+      "durationS": 120.0,
+      "loopable": true,
+      "tags": ["guitare", "mélancolie", "acoustique", "nostalgique"]
+    },
+    {
+      "id": "music-mystery-001",
+      "filename": "mystery-ambient-001.wav",
+      "description": "Ambiance mystérieuse, textures étranges",
+      "mood": "mystère",
+      "tempo": "slow",
+      "bpm": 55,
+      "durationS": 90.0,
+      "loopable": true,
+      "tags": ["mystère", "ambient", "étrange", "atmosphérique"]
+    },
+    {
+      "id": "music-action-001",
+      "filename": "action-drums-001.wav",
+      "description": "Percussions rythmées, énergie maximale",
+      "mood": "action",
+      "tempo": "fast",
+      "bpm": 140,
+      "durationS": 60.0,
+      "loopable": true,
+      "tags": ["action", "percussions", "rythmé", "énergique"]
+    },
+    {
+      "id": "music-neutral-001",
+      "filename": "neutral-background-001.wav",
+      "description": "Fond musical neutre, discret et non intrusif",
+      "mood": "neutre",
+      "tempo": "moderate",
+      "bpm": 80,
+      "durationS": 120.0,
+      "loopable": true,
+      "tags": ["neutre", "background", "discret", "instrumental"]
+    }
+  ]
+}

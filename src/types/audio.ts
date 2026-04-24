@@ -166,6 +166,23 @@ export type FXAsset = {
   tags: string[]
 }
 
+// ─── Music Library ───
+
+export type MusicMood = 'tension' | 'calme' | 'épique' | 'mélancolie' | 'neutre' | 'mystère' | 'action'
+
+export type MusicTrack = {
+  id: string
+  filename: string
+  filePath: string         // chemin absolu résolu au chargement
+  description: string
+  mood: MusicMood
+  tempo: 'slow' | 'moderate' | 'fast'
+  bpm: number
+  durationS: number
+  loopable: boolean        // peut être bouclé pour les scènes longues
+  tags: string[]
+}
+
 // ─── Canon audio scène — v1.0 ───
 
 export type SceneIntention = {
