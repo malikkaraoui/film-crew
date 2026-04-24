@@ -4,6 +4,7 @@ import { executeWithFailover } from '@/lib/providers/failover'
 import type { LLMProvider } from '@/lib/providers/types'
 import type { PipelineStep, StepContext, StepResult } from '../types'
 import type { DirectorPlan } from './step-3-json'
+import type { AudioMasterManifest } from '@/types/audio'
 import { logger } from '@/lib/logger'
 import {
   getBlueprintScene,
@@ -148,6 +149,16 @@ export const step5Prompts: PipelineStep = {
 
     const blueprint = await readStoryboardBlueprint(ctx.storagePath)
 
+    // Durées audio réelles issues du master manifest (step 4c)
+    const audioDurationMap = new Map<number, number>()
+    try {
+      const raw = await readFile(join(ctx.storagePath, 'audio', 'audio-master-manifest.json'), 'utf-8')
+      const audioManifest = JSON.parse(raw) as AudioMasterManifest
+      for (const scene of audioManifest.scenes) {
+        audioDurationMap.set(scene.sceneIndex, scene.durationS)
+      }
+    } catch { /* audio non encore généré — durées estimées conservées */ }
+
     let brandContext = ''
     let brandKitUsed = false
     if (ctx.brandKitPath) {
@@ -218,8 +229,10 @@ ${JSON.stringify(structure.scenes.map((scene) => {
                 const blueprintScene = getBlueprintScene(blueprint, scene.index)
                 const shotEntry = directorPlan?.shotList.find((entry) => entry.sceneIndex === scene.index)
                 const briefScene = brief?.sceneOutline?.find((entry) => entry.index === scene.index)
+                const audioDuration = audioDurationMap.get(scene.index)
                 return {
                   ...scene,
+                  audioDuration_s: audioDuration ?? undefined,
                   briefAnchor: briefScene
                     ? {
                         title: briefScene.title,
@@ -230,7 +243,7 @@ ${JSON.stringify(structure.scenes.map((scene) => {
                         foreground: briefScene.foreground,
                         midground: briefScene.midground,
                         background: briefScene.background,
-                        duration_s: briefScene.duration_s,
+                        duration_s: audioDuration ?? briefScene.duration_s,
                         emotion: briefScene.emotion,
                         narrativeRole: briefScene.narrativeRole,
                       }
