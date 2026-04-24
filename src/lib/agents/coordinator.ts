@@ -158,15 +158,17 @@ function validateSceneOutlineLock(sceneOutline: MeetingSceneOutlineItem[], outpu
 }
 
 /**
- * Coordonne une réunion de production entre les 6 agents.
+ * Coordonne une réunion de production entre les 10 agents.
  *
  * Flow :
  * 1. Mia ouvre la réunion et présente le brief
- * 2. Tour de table : chaque agent donne son avis
- * 3. Discussion libre (2 rounds)
- * 4. Emilie vérifie la cohérence Brand Kit
- * 5. Chaque agent rédige sa section du brief
- * 6. Mia conclut avec le résumé exécutif
+ * 2. Tour de table narratif (lenny, nael)
+ * 3. Tour de table audio (sami, jade, remi)
+ * 4. Discussion croisée image/son (2 rounds × laura, nico, jade, remi)
+ * 5. Arbitrage rythme (theo propose, lenny + nael réagissent)
+ * 6. Emilie vérifie la cohérence Brand Kit (visuel + sonore)
+ * 7. Chaque agent rédige sa section du brief
+ * 8. Mia conclut avec le résumé exécutif
  */
 export class MeetingCoordinator {
   private agents: Map<AgentRole, BaseAgent> = new Map()
