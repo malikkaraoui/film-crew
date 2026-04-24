@@ -5,6 +5,10 @@ export type AgentRole =
   | 'nael'     // Metteur en scène
   | 'emilie'   // Habillage / Brand Kit
   | 'nico'     // Lumière
+  | 'sami'     // Dialoguiste
+  | 'jade'     // Sound Designer
+  | 'remi'     // Superviseur Musique
+  | 'theo'     // Éditeur Rythme
 
 export type AgentProfile = {
   role: AgentRole

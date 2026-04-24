@@ -6,26 +6,31 @@ import { AGENT_PROFILES } from './profiles'
  * Miroir exact du flow de MeetingCoordinator.runMeeting().
  *
  * Phase 1 : Mia ouvre
- * Phase 2 : Tour de table (lenny, nael, laura, nico, emilie)
- * Phase 3 : Discussion libre (2 rounds × lenny, laura, nael)
- * Phase 4 : Emilie valide le Brand Kit
- * Phase 5 : Chaque agent rédige sa section (lenny, laura, nael, emilie, nico)
- * Phase 6 : Mia conclut
+ * Phase 2 : Tour de table narratif (lenny, nael)
+ * Phase 3 : Tour de table audio (sami, jade, remi)
+ * Phase 4 : Discussion croisée image/son (laura, nico, jade, remi)
+ * Phase 5 : Arbitrage rythme (theo propose, lenny + nael réagissent)
+ * Phase 6 : Validation Brand Kit étendue (emilie — visuel + sonore)
+ * Phase 7 : Rédaction du brief (lenny, laura, nael, emilie, nico, sami, jade, remi, theo)
+ * Phase 8 : Mia conclut
  */
 export const FULL_SPEAKING_SEQUENCE: AgentRole[] = [
-  // Phase 1
+  // Phase 1 — Ouverture
   'mia',
-  // Phase 2
-  'lenny', 'nael', 'laura', 'nico', 'emilie',
-  // Phase 3 — round 1
-  'lenny', 'laura', 'nael',
-  // Phase 3 — round 2
-  'lenny', 'laura', 'nael',
-  // Phase 4
+  // Phase 2 — Tour de table narratif
+  'lenny', 'nael',
+  // Phase 3 — Tour de table audio
+  'sami', 'jade', 'remi',
+  // Phase 4 — Discussion croisée image/son (2 rounds)
+  'laura', 'nico', 'jade', 'remi',
+  'laura', 'nico', 'jade', 'remi',
+  // Phase 5 — Arbitrage rythme
+  'theo', 'lenny', 'nael',
+  // Phase 6 — Validation Brand Kit étendue
   'emilie',
-  // Phase 5
-  'lenny', 'laura', 'nael', 'emilie', 'nico',
-  // Phase 6
+  // Phase 7 — Rédaction du brief
+  'lenny', 'laura', 'nael', 'emilie', 'nico', 'sami', 'jade', 'remi', 'theo',
+  // Phase 8 — Conclusion
   'mia',
 ]
 
@@ -38,11 +43,13 @@ export type MeetingPhase = {
 
 const PHASES: MeetingPhase[] = [
   { name: 'Ouverture', number: 1, startIndex: 0, endIndex: 1 },
-  { name: 'Tour de table', number: 2, startIndex: 1, endIndex: 6 },
-  { name: 'Discussion libre', number: 3, startIndex: 6, endIndex: 12 },
-  { name: 'Validation Brand Kit', number: 4, startIndex: 12, endIndex: 13 },
-  { name: 'Rédaction du brief', number: 5, startIndex: 13, endIndex: 18 },
-  { name: 'Conclusion', number: 6, startIndex: 18, endIndex: 19 },
+  { name: 'Tour de table narratif', number: 2, startIndex: 1, endIndex: 3 },
+  { name: 'Tour de table audio', number: 3, startIndex: 3, endIndex: 6 },
+  { name: 'Discussion croisée image/son', number: 4, startIndex: 6, endIndex: 14 },
+  { name: 'Arbitrage rythme', number: 5, startIndex: 14, endIndex: 17 },
+  { name: 'Validation Brand Kit', number: 6, startIndex: 17, endIndex: 18 },
+  { name: 'Rédaction du brief', number: 7, startIndex: 18, endIndex: 27 },
+  { name: 'Conclusion', number: 8, startIndex: 27, endIndex: 28 },
 ]
 
 export type MeetingState = {

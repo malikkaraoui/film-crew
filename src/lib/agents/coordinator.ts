@@ -249,10 +249,9 @@ export class MeetingCoordinator {
     const opening = await this.agentSpeak('mia', openingContext)
     totalCost += opening.metadata?.costEur ?? 0
 
-    // Phase 2 : Tour de table — chaque agent réagit
-    for (const role of MEETING_ORDER.slice(1, -1)) {
+    // Phase 2 : Tour de table narratif — lenny, nael
+    for (const role of ['lenny', 'nael'] as AgentRole[]) {
       const transcript = this.getPromptTranscript()
-      // Ton spécifique à cet agent selon le template (10D)
       const agentTone = this.template?.agentTones?.[role]
       const toneContext = agentTone ? `\n[Ton attendu dans ce style ${this.template!.name} : ${agentTone}]` : ''
       const context = `Voici la discussion jusqu'ici :\n\n${transcript}\n\nC'est ton tour de parler. Donne ton avis de ${AGENT_PROFILES[role].title} sur cette idée. Sois concis (3-5 phrases). Challenge les idées des autres si nécessaire.${toneContext}`
@@ -265,11 +264,23 @@ export class MeetingCoordinator {
       totalCost += msg.metadata?.costEur ?? 0
     }
 
-    // Phase 3 : Discussion libre — 2 rounds
+    // Phase 3 : Tour de table audio — sami, jade, remi
+    for (const role of ['sami', 'jade', 'remi'] as AgentRole[]) {
+      const transcript = this.getPromptTranscript()
+      const context = `Voici la discussion narrative jusqu'ici :\n\n${transcript}\n\nC'est ton tour. En tant que ${AGENT_PROFILES[role].title}, propose tes intentions audio pour cette idée. Sois concis (3-5 phrases). Pense à ce qu'on entendra si on ferme les yeux.`
+
+      const msg = await this.agentSpeak(role, context, {
+        resetHistory: true,
+        timeoutMs: MEETING_LLM_TIMEOUT_MS,
+      })
+      totalCost += msg.metadata?.costEur ?? 0
+    }
+
+    // Phase 4 : Discussion croisée image/son — 2 rounds × laura, nico, jade, remi
     for (let round = 0; round < 2; round++) {
-      for (const role of ['lenny', 'laura', 'nael'] as AgentRole[]) {
+      for (const role of ['laura', 'nico', 'jade', 'remi'] as AgentRole[]) {
         const transcript = this.getPromptTranscript()
-        const context = `Discussion en cours (round ${round + 2}) :\n\n${transcript}\n\nRéagis aux dernières interventions. Affine, challenge ou complète. 2-3 phrases max.`
+        const context = `Discussion croisée image/son (round ${round + 1}) :\n\n${transcript}\n\nRéagis aux propositions visuelles ET sonores. Comment ton domaine (${AGENT_PROFILES[role].title}) s'articule avec les autres ? Affine ou challenge. 2-3 phrases max.`
 
         const msg = await this.agentSpeak(role, context, {
           resetHistory: true,
@@ -280,8 +291,31 @@ export class MeetingCoordinator {
       }
     }
 
-    // Phase 4 : Emilie vérifie la cohérence Brand Kit
-    const brandCheckContext = `Voici toute la discussion :\n\n${this.getPromptTranscript()}\n\n${this.brandKit ? `Brand Kit :\n${this.brandKit}\n\n` : ''}Vérifie la cohérence de toutes les propositions avec le Brand Kit. Valide ce qui est conforme, rejette ce qui ne l'est pas en expliquant pourquoi et en proposant une correction.`
+    // Phase 5 : Arbitrage rythme — theo propose, lenny et nael réagissent
+    {
+      const transcript = this.getPromptTranscript()
+      const theoContext = `Voici toutes les propositions narratives, visuelles et sonores :\n\n${transcript}\n\nEn tant qu'éditeur rythme, propose un timing global : durée par scène, placement des pauses, rythme de montage. Arbitre ce qui va trop vite ou trop lent. Sois concret (durées en secondes).`
+
+      const theoMsg = await this.agentSpeak('theo', theoContext, {
+        resetHistory: true,
+        timeoutMs: MEETING_LLM_TIMEOUT_MS,
+      })
+      totalCost += theoMsg.metadata?.costEur ?? 0
+
+      for (const role of ['lenny', 'nael'] as AgentRole[]) {
+        const updatedTranscript = this.getPromptTranscript()
+        const reactContext = `Théo vient de proposer un timing :\n\n${updatedTranscript}\n\nRéagis à sa proposition de rythme. Le timing sert-il l'histoire et l'émotion ? 2-3 phrases max.`
+
+        const msg = await this.agentSpeak(role, reactContext, {
+          resetHistory: true,
+          timeoutMs: MEETING_LLM_TIMEOUT_MS,
+        })
+        totalCost += msg.metadata?.costEur ?? 0
+      }
+    }
+
+    // Phase 6 : Emilie vérifie la cohérence Brand Kit (visuel + sonore)
+    const brandCheckContext = `Voici toute la discussion :\n\n${this.getPromptTranscript()}\n\n${this.brandKit ? `Brand Kit :\n${this.brandKit}\n\n` : ''}Vérifie la cohérence de toutes les propositions — visuelles ET sonores — avec le Brand Kit et l'identité de la chaîne. Valide ce qui est conforme, rejette ce qui ne l'est pas en expliquant pourquoi et en proposant une correction. Inclus les choix de ton vocal, d'ambiance et de musique dans ta validation.`
 
     const brandCheck = await this.agentSpeak('emilie', brandCheckContext, {
       resetHistory: true,
@@ -291,13 +325,13 @@ export class MeetingCoordinator {
     brandCheck.messageType = 'validation'
     totalCost += brandCheck.metadata?.costEur ?? 0
 
-    // Phase 5 : Chaque agent rédige sa section du brief
+    // Phase 7 : Chaque agent rédige sa section du brief
     const fullTranscript = this.formatTranscript()
     const transcript = compactTranscriptForPrompt(fullTranscript)
     logger.info({ event: 'meeting_transcript', runId: this.runId, fullLength: fullTranscript.length, truncatedLength: transcript.length })
     const briefSections: MeetingBrief['sections'] = []
 
-    for (const role of ['lenny', 'laura', 'nael', 'emilie', 'nico'] as AgentRole[]) {
+    for (const role of ['lenny', 'laura', 'nael', 'emilie', 'nico', 'sami', 'jade', 'remi', 'theo'] as AgentRole[]) {
       const agent = this.agents.get(role)!
       const section = await agent.writeBriefSection(transcript, this.runId, {
         timeoutMs: MEETING_LLM_TIMEOUT_MS,
@@ -316,8 +350,8 @@ export class MeetingCoordinator {
       })
     }
 
-    // Phase 6 : Mia conclut — utiliser le transcript tronqué
-    const closingContext = `Voici la réunion et les sections du brief :\n\n${transcript}\n\nConclus la réunion. Produis :\n1. Un résumé exécutif (5-7 lignes)\n2. Une estimation budget (en postes de coûts)\n3. Ta validation finale\n\nRappelle explicitement que chaque scène doit imposer premier plan, plan intermédiaire, arrière-plan, interdire les fonds studio/neutres et rester pensée pour un rendu TikTok vertical 9:16.\n\nSois directe et structurée.`
+    // Phase 8 : Mia conclut — utiliser le transcript tronqué
+    const closingContext = `Voici la réunion et les sections du brief :\n\n${transcript}\n\nConclus la réunion. Produis :\n1. Un résumé exécutif (5-7 lignes)\n2. Une estimation budget (en postes de coûts)\n3. Ta validation finale\n\nRappelle explicitement que :\n- chaque scène doit imposer premier plan, plan intermédiaire, arrière-plan\n- interdire les fonds studio/neutres\n- rester pensée pour un rendu TikTok vertical 9:16\n- l'audio (dialogues, ambiances, musique) doit être validé AVANT la génération vidéo\n\nSois directe et structurée.`
 
     const closing = await this.agentSpeak('mia', closingContext, {
       resetHistory: true,
