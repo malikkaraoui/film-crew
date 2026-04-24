@@ -4,6 +4,9 @@ import { renderDialogueToTTS } from '@/lib/pipeline/tts-renderer'
 import { assembleSceneTTS } from '@/lib/audio/tts-render'
 import { mixScene, DEFAULT_MIX_VOLUMES } from '@/lib/audio/mix-scene'
 import { assembleMaster } from '@/lib/audio/mix-master'
+import { loadFXIndex } from '@/lib/audio/fx-library'
+import { selectFXForScene } from '@/lib/audio/fx-selector'
+import { resolveMusicFromStructure } from '@/lib/audio/scene-assets'
 import { logger } from '@/lib/logger'
 import type { DialogueScene, DialogueScript, SceneAudioPackage } from '@/types/audio'
 import type { SceneMixInput } from '@/lib/audio/mix-master'
@@ -99,11 +102,25 @@ export const step4cAudio: PipelineStep = {
       }
     }
 
-    // 4. Process each scene
+    // 4. Résoudre les assets audio globaux (musique + FX index)
+    const [globalMusicPath, fxAssets] = await Promise.all([
+      resolveMusicFromStructure(storagePath),
+      loadFXIndex(),
+    ])
+    if (fxAssets.length === 0) {
+      logger.warn({ event: 'audio_fx_index_missing', runId })
+    }
+    if (globalMusicPath) {
+      logger.info({ event: 'audio_music_resolved', runId, path: globalMusicPath })
+    }
+
+    // 5. Process each scene
     const sceneMixInputs: SceneMixInput[] = []
     let totalCost = 0
+    let totalFxCount = 0
+    const sortedScenes = [...script.scenes].sort((a, b) => a.sceneIndex - b.sceneIndex)
 
-    for (const scene of script.scenes) {
+    for (const scene of sortedScenes) {
       const pkg = dialogueSceneToPackage(scene, runId)
       const sceneOutputDir = join(audioDir, 'scenes', String(scene.sceneIndex))
 
@@ -118,12 +135,18 @@ export const step4cAudio: PipelineStep = {
 
       const mixPath = join(sceneOutputDir, 'mix.wav')
 
+      // FX selection — V1: position-based rules
+      const isFirst = scene.sceneIndex === sortedScenes[0].sceneIndex
+      const isLast = scene.sceneIndex === sortedScenes[sortedScenes.length - 1].sceneIndex
+      const fxPaths = selectFXForScene(scene, fxAssets, isFirst, isLast).map((a) => a.filePath)
+      totalFxCount += fxPaths.length
+
       try {
         await mixScene({
           ttsPath: sceneTTS.concatFilePath,
           ambiancePath: null,
-          fxPaths: [],
-          musicPath: null,
+          fxPaths,
+          musicPath: globalMusicPath,
           outputPath: mixPath,
           volumes: DEFAULT_MIX_VOLUMES,
           targetDurationS: pkg.timing.targetDurationS,
@@ -180,6 +203,9 @@ export const step4cAudio: PipelineStep = {
           totalDurationS: masterManifest.totalDurationS,
           sceneCount: sceneMixInputs.length,
           ttsProvider: ttsManifest.provider,
+          musicPath: globalMusicPath,
+          fxCount: totalFxCount,
+          fxIndexMissing: fxAssets.length === 0,
         },
       }
     } catch (assemblyErr) {

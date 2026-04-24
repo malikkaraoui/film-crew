@@ -5,6 +5,8 @@ vi.mock('@/lib/pipeline/tts-renderer')
 vi.mock('@/lib/audio/tts-render')
 vi.mock('@/lib/audio/mix-scene')
 vi.mock('@/lib/audio/mix-master')
+vi.mock('@/lib/audio/fx-library')
+vi.mock('@/lib/audio/scene-assets')
 vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
@@ -18,6 +20,8 @@ import { renderDialogueToTTS } from '@/lib/pipeline/tts-renderer'
 import { assembleSceneTTS } from '@/lib/audio/tts-render'
 import { mixScene } from '@/lib/audio/mix-scene'
 import { assembleMaster } from '@/lib/audio/mix-master'
+import { loadFXIndex } from '@/lib/audio/fx-library'
+import { resolveMusicFromStructure } from '@/lib/audio/scene-assets'
 import { parseSceneAudioPackage } from '@/lib/audio/scene-canon'
 
 import {
@@ -81,6 +85,19 @@ const mockRenderDialogueToTTS = renderDialogueToTTS as MockedFunction<typeof ren
 const mockAssembleSceneTTS = assembleSceneTTS as MockedFunction<typeof assembleSceneTTS>
 const mockMixScene = mixScene as MockedFunction<typeof mixScene>
 const mockAssembleMaster = assembleMaster as MockedFunction<typeof assembleMaster>
+const mockLoadFXIndex = loadFXIndex as MockedFunction<typeof loadFXIndex>
+const mockResolveMusicFromStructure = resolveMusicFromStructure as MockedFunction<typeof resolveMusicFromStructure>
+
+// ─── FX fixtures ───
+
+const fxTransition = {
+  id: 'transition-001', category: 'transitions' as const, filename: 'swoosh-001.wav',
+  filePath: '/assets/fx/transitions/swoosh-001.wav', description: 'Swoosh', durationS: 0.4, tags: ['swoosh'],
+}
+const fxImpact = {
+  id: 'impact-001', category: 'impacts' as const, filename: 'impact-drum-001.wav',
+  filePath: '/assets/fx/impacts/impact-drum-001.wav', description: 'Impact', durationS: 0.6, tags: ['impact'],
+}
 
 // ─── Default mock implementations ───
 
@@ -88,6 +105,8 @@ function setupHappyPath() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mockReadFile.mockResolvedValue(JSON.stringify(sampleScript) as any)
   mockRenderDialogueToTTS.mockResolvedValue(sampleManifest)
+  mockLoadFXIndex.mockResolvedValue([fxTransition, fxImpact])
+  mockResolveMusicFromStructure.mockResolvedValue(null)
   mockAssembleSceneTTS.mockImplementation(async ({ scene }) => ({
     sceneIndex: scene.sceneIndex,
     concatFilePath: `/tmp/run_test/audio/scenes/${scene.sceneIndex}/tts-scene${scene.sceneIndex}.wav`,
@@ -187,5 +206,89 @@ describe('cleanupStaleAudioArtifacts', () => {
     expect(rmCalls).toContain('/tmp/run_test/audio/audio-master-manifest.json')
     expect(rmCalls).toContain('/tmp/run_test/audio/master.wav')
     expect(rmCalls).toContain('/tmp/run_test/audio/scenes')
+  })
+})
+
+describe('step4cAudio — FX', () => {
+  it('loadFXIndex appelé exactement une fois (pas dans la boucle)', async () => {
+    setupHappyPath()
+    await step4cAudio.execute(makeCtx())
+    expect(mockLoadFXIndex).toHaveBeenCalledOnce()
+  })
+
+  it('fxCount dans outputData = nombre de FX effectivement passés à mixScene', async () => {
+    setupHappyPath() // 2 scènes : première reçoit transition, dernière reçoit impact
+    const result = await step4cAudio.execute(makeCtx())
+    const data = result.outputData as Record<string, unknown>
+    expect(data.fxCount).toBe(2)
+  })
+
+  it('première scène → mixScene appelé avec fxPaths non vide', async () => {
+    setupHappyPath()
+    await step4cAudio.execute(makeCtx())
+    const firstCall = mockMixScene.mock.calls[0][0]
+    expect(firstCall.fxPaths).toHaveLength(1)
+    expect(firstCall.fxPaths[0]).toContain('transitions')
+  })
+
+  it('dernière scène → mixScene appelé avec fxPaths non vide (impacts)', async () => {
+    setupHappyPath()
+    await step4cAudio.execute(makeCtx())
+    const lastCall = mockMixScene.mock.calls[1][0]
+    expect(lastCall.fxPaths).toHaveLength(1)
+    expect(lastCall.fxPaths[0]).toContain('impacts')
+  })
+
+  it('fxIndex absent → outputData.fxIndexMissing=true, fxCount=0', async () => {
+    setupHappyPath()
+    mockLoadFXIndex.mockResolvedValue([])
+    const result = await step4cAudio.execute(makeCtx())
+    const data = result.outputData as Record<string, unknown>
+    expect(data.fxIndexMissing).toBe(true)
+    expect(data.fxCount).toBe(0)
+  })
+
+  it('fxIndex absent → mixScene appelé avec fxPaths:[] (dialogue-only)', async () => {
+    setupHappyPath()
+    mockLoadFXIndex.mockResolvedValue([])
+    await step4cAudio.execute(makeCtx())
+    for (const call of mockMixScene.mock.calls) {
+      expect(call[0].fxPaths).toEqual([])
+    }
+  })
+})
+
+describe('step4cAudio — Music', () => {
+  it('musique résolue → mixScene reçoit musicPath non null pour toutes les scènes', async () => {
+    setupHappyPath()
+    mockResolveMusicFromStructure.mockResolvedValue('/assets/music/tension.wav')
+    await step4cAudio.execute(makeCtx())
+    for (const call of mockMixScene.mock.calls) {
+      expect(call[0].musicPath).toBe('/assets/music/tension.wav')
+    }
+  })
+
+  it('musique non résolue → mixScene reçoit musicPath null', async () => {
+    setupHappyPath()
+    mockResolveMusicFromStructure.mockResolvedValue(null)
+    await step4cAudio.execute(makeCtx())
+    for (const call of mockMixScene.mock.calls) {
+      expect(call[0].musicPath).toBeNull()
+    }
+  })
+
+  it('musicPath dans outputData', async () => {
+    setupHappyPath()
+    mockResolveMusicFromStructure.mockResolvedValue('/assets/music/calm.wav')
+    const result = await step4cAudio.execute(makeCtx())
+    const data = result.outputData as Record<string, unknown>
+    expect(data.musicPath).toBe('/assets/music/calm.wav')
+  })
+
+  it('resolveMusicFromStructure appelé exactement une fois (pas dans la boucle)', async () => {
+    setupHappyPath()
+    await step4cAudio.execute(makeCtx())
+    expect(mockResolveMusicFromStructure).toHaveBeenCalledOnce()
+    expect(mockResolveMusicFromStructure).toHaveBeenCalledWith('/tmp/run_test')
   })
 })
