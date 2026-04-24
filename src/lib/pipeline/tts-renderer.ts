@@ -1,4 +1,4 @@
-import { readFile, mkdir, writeFile } from 'fs/promises'
+import { readFile, mkdir, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { executeWithFailover } from '@/lib/providers/failover'
 import type { TTSProvider } from '@/lib/providers/types'
@@ -39,7 +39,7 @@ export async function renderDialogueToTTS(params: {
   language?: string
   voice?: string
 }): Promise<TTSManifest | null> {
-  const { storagePath, runId, language = 'fr', voice = 'default' } = params
+  const { storagePath, runId, language: languageOverride, voice = 'default' } = params
 
   // Lire le dialogue_script.json
   let script: DialogueScript
@@ -57,11 +57,16 @@ export async function renderDialogueToTTS(params: {
 
   if (!script.scenes || script.scenes.length === 0) {
     logger.warn({ event: 'tts_render_empty_script', runId })
+    await rm(join(storagePath, 'tts_manifest.json'), { force: true }).catch(() => {})
+    await rm(join(storagePath, 'tts'), { recursive: true, force: true }).catch(() => {})
     return null
   }
 
+  const language = languageOverride ?? script.language ?? 'fr'
+
   // Créer le dossier tts/
   const ttsDir = join(storagePath, 'tts')
+  await rm(ttsDir, { recursive: true, force: true }).catch(() => {})
   await mkdir(ttsDir, { recursive: true })
 
   // Collecter toutes les lignes à rendre
@@ -76,6 +81,8 @@ export async function renderDialogueToTTS(params: {
 
   if (linesToRender.length === 0) {
     logger.warn({ event: 'tts_render_no_lines', runId })
+    await rm(join(storagePath, 'tts_manifest.json'), { force: true }).catch(() => {})
+    await rm(ttsDir, { recursive: true, force: true }).catch(() => {})
     return null
   }
 
@@ -88,7 +95,7 @@ export async function renderDialogueToTTS(params: {
 
   // Rendre chaque ligne
   const manifestLines: TTSManifestLine[] = []
-  let providerUsed = 'unknown'
+  const providersUsed = new Set<string>()
 
   for (const { sceneIndex, line } of linesToRender) {
     const filename = `tts-scene${sceneIndex}-line${line.lineIndex}.wav`
@@ -104,7 +111,7 @@ export async function renderDialogueToTTS(params: {
         runId,
       )
 
-      providerUsed = provider.name
+      providersUsed.add(provider.name)
 
       // Le provider écrit le fichier dans ttsDir avec son propre nom.
       // On le renomme vers notre convention de nommage.
@@ -144,8 +151,14 @@ export async function renderDialogueToTTS(params: {
 
   if (manifestLines.length === 0) {
     logger.warn({ event: 'tts_render_all_failed', runId })
+    await rm(join(storagePath, 'tts_manifest.json'), { force: true }).catch(() => {})
+    await rm(ttsDir, { recursive: true, force: true }).catch(() => {})
     return null
   }
+
+  const providerUsed = providersUsed.size === 1
+    ? [...providersUsed][0]
+    : 'mixed'
 
   // Écrire le manifest
   const manifest: TTSManifest = {

@@ -149,6 +149,32 @@ describe('renderDialogueToTTS', () => {
     expect(diskManifest.lines).toHaveLength(3)
   })
 
+  it('reprend la langue du script si aucune langue n’est fournie en paramètre', async () => {
+    const enScript: DialogueScript = {
+      ...sampleScript,
+      language: 'en',
+    }
+    await writeFile(join(storagePath, 'dialogue_script.json'), JSON.stringify(enScript))
+
+    const { executeWithFailover } = await import('@/lib/providers/failover')
+    vi.mocked(executeWithFailover).mockImplementation(async () => {
+      const ttsDir = join(storagePath, 'tts')
+      await mkdir(ttsDir, { recursive: true })
+      const fakeFilePath = join(ttsDir, `tts-kokoro-${Date.now()}.wav`)
+      await writeFile(fakeFilePath, Buffer.from('fake-wav-data'))
+      return {
+        result: { filePath: fakeFilePath, duration: 1.2, costEur: 0 },
+        provider: { name: 'kokoro-local', type: 'tts' },
+      } as never
+    })
+
+    const { renderDialogueToTTS } = await import('../tts-renderer')
+    const manifest = await renderDialogueToTTS({ storagePath, runId: 'test-run-1' })
+
+    expect(manifest).not.toBeNull()
+    expect(manifest!.language).toBe('en')
+  })
+
   it('skip les lignes en échec mais continue les autres', async () => {
     await writeFile(join(storagePath, 'dialogue_script.json'), JSON.stringify(sampleScript))
 
@@ -184,6 +210,10 @@ describe('renderDialogueToTTS', () => {
   it('retourne null si toutes les lignes échouent', async () => {
     await writeFile(join(storagePath, 'dialogue_script.json'), JSON.stringify(sampleScript))
 
+    await mkdir(join(storagePath, 'tts'), { recursive: true })
+    await writeFile(join(storagePath, 'tts', 'stale.wav'), Buffer.from('stale'))
+    await writeFile(join(storagePath, 'tts_manifest.json'), JSON.stringify({ stale: true }))
+
     const { executeWithFailover } = await import('@/lib/providers/failover')
     vi.mocked(executeWithFailover).mockRejectedValue(new Error('Tous les providers down'))
 
@@ -191,6 +221,33 @@ describe('renderDialogueToTTS', () => {
     const manifest = await renderDialogueToTTS({ storagePath, runId: 'test-run-1' })
 
     expect(manifest).toBeNull()
+    await expect(readFile(join(storagePath, 'tts_manifest.json'), 'utf-8')).rejects.toThrow()
+    await expect(readFile(join(storagePath, 'tts', 'stale.wav'), 'utf-8')).rejects.toThrow()
+  })
+
+  it('marque le manifest à mixed si plusieurs providers sont utilisés', async () => {
+    await writeFile(join(storagePath, 'dialogue_script.json'), JSON.stringify(sampleScript))
+
+    const { executeWithFailover } = await import('@/lib/providers/failover')
+
+    let callCount = 0
+    vi.mocked(executeWithFailover).mockImplementation(async () => {
+      callCount++
+      const ttsDir = join(storagePath, 'tts')
+      await mkdir(ttsDir, { recursive: true })
+      const fakeFilePath = join(ttsDir, `tts-provider-${callCount}.wav`)
+      await writeFile(fakeFilePath, Buffer.from('fake-wav'))
+      return {
+        result: { filePath: fakeFilePath, duration: 1.5, costEur: 0 },
+        provider: { name: callCount === 1 ? 'kokoro-local' : 'system-tts', type: 'tts' },
+      } as never
+    })
+
+    const { renderDialogueToTTS } = await import('../tts-renderer')
+    const manifest = await renderDialogueToTTS({ storagePath, runId: 'test-run-1' })
+
+    expect(manifest).not.toBeNull()
+    expect(manifest!.provider).toBe('mixed')
   })
 
   it('skip les lignes avec texte vide', async () => {
