@@ -151,3 +151,79 @@ export type AudioAssetType =
   | 'audio_final'
 
 export type AudioAssetStatus = 'draft' | 'assembled' | 'validated' | 'rejected'
+
+// ─── Canon audio scène — v1.0 ───
+
+export type SceneIntention = {
+  emotion: string
+  narrativeRole: string
+  tensionLevel: number
+  videoPromptHint: string
+}
+
+export type SceneTiming = {
+  targetDurationS: number
+  minDurationS: number
+  maxDurationS: number
+  transitionIn: AudioTransition
+  transitionOut: AudioTransition
+}
+
+export type InterSceneDependency = {
+  continuesAmbianceFrom: number | null
+  continuesMusicFrom: number | null
+  requiredBeforeScene: number[]
+  sharedSpeakers: string[]
+}
+
+export type SceneAudioPackage = {
+  version: '1.0'
+  runId: string
+  sceneIndex: number
+  title: string
+  narration: {
+    lines: DialogueLine[]
+    silences: SilenceMarker[]
+    stageDirections: string
+  }
+  intention: SceneIntention
+  ambiance: AmbianceLayer
+  fx: SoundFX[]
+  music: Omit<SceneMusicIntent, 'sceneIndex'>
+  timing: SceneTiming
+  dependencies: InterSceneDependency
+}
+
+export type SceneAudioRenderStatus = {
+  sceneIndex: number
+  startS: number
+  endS: number
+  durationS: number
+  ttsFilePath: string
+  mixFilePath: string
+  status: AudioAssetStatus
+  ttsProvider: string
+  costEur: number
+}
+
+export type AudioQualityChecks = {
+  allScenesRendered: boolean
+  totalCostEur: number
+  sttValidation?: {
+    enabled: boolean
+    wer: number
+    provider: string
+  }
+}
+
+export type AudioMasterManifest = {
+  version: '1.0'
+  runId: string
+  totalDurationS: number
+  sampleRate: number
+  channels: number
+  masterFilePath: string
+  scenes: SceneAudioRenderStatus[]
+  qualityChecks: AudioQualityChecks
+  generatedAt: string
+}
