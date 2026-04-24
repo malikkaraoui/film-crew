@@ -15,7 +15,7 @@ type PreviewManifest = {
 
 export const step8Publish: PipelineStep = {
   name: 'Publication',
-  stepNumber: 9,
+  stepNumber: 10,
 
   async execute(ctx: StepContext): Promise<StepResult> {
     const finalDir = join(ctx.storagePath, 'final')

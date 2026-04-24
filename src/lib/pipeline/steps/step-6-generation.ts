@@ -20,7 +20,7 @@ type PromptEntry = {
 
 export const step6Generation: PipelineStep = {
   name: 'Génération',
-  stepNumber: 7,
+  stepNumber: 8,
 
   async execute(ctx: StepContext): Promise<StepResult> {
     const projectConfig = await readProjectConfig(ctx.storagePath)

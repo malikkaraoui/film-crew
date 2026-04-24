@@ -205,7 +205,7 @@ async function assembleAnimatic(
 
 export const step7Preview: PipelineStep = {
   name: 'Preview',
-  stepNumber: 8,
+  stepNumber: 9,
 
   async execute(ctx: StepContext): Promise<StepResult> {
     // ─── Lecture des manifests ────────────────────────────────────────────────

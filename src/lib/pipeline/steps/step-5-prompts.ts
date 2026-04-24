@@ -118,7 +118,7 @@ type RawGeneratedPromptEntry = Partial<GeneratedPromptFields> & {
 
 export const step5Prompts: PipelineStep = {
   name: 'Prompts Seedance',
-  stepNumber: 6,
+  stepNumber: 7,
 
   async execute(ctx: StepContext): Promise<StepResult> {
     const projectConfig = await readProjectConfig(ctx.storagePath)

@@ -4,10 +4,11 @@ export const PIPELINE_STEP_DEFINITIONS = [
   { stepNumber: 3, name: 'JSON structuré' },
   { stepNumber: 4, name: 'Blueprint visuel' },
   { stepNumber: 5, name: 'Storyboard' },
-  { stepNumber: 6, name: 'Prompts Seedance' },
-  { stepNumber: 7, name: 'Génération' },
-  { stepNumber: 8, name: 'Preview' },
-  { stepNumber: 9, name: 'Publication' },
+  { stepNumber: 6, name: 'Audio Package' },
+  { stepNumber: 7, name: 'Prompts Seedance' },
+  { stepNumber: 8, name: 'Génération' },
+  { stepNumber: 9, name: 'Preview' },
+  { stepNumber: 10, name: 'Publication' },
 ] as const
 
 export const PIPELINE_STEP_NAMES = PIPELINE_STEP_DEFINITIONS.map((step) => step.name)
