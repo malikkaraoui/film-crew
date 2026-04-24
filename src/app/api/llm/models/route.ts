@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server'
-import { getAvailableCloudLlmModels, isCloudLlmReachable } from '@/lib/llm/target'
+import {
+  getAvailableCloudLlmModels,
+  getAvailableOpenRouterLlmModels,
+  isCloudLlmReachable,
+  isOpenRouterLlmReachable,
+} from '@/lib/llm/target'
 
 const OLLAMA_URL = process.env.OLLAMA_URL || 'http://localhost:11434'
 
@@ -27,6 +32,8 @@ export async function GET() {
       localError: local.error ?? null,
       cloudModels: getAvailableCloudLlmModels(),
       cloudAvailable: isCloudLlmReachable(),
+      openRouterModels: getAvailableOpenRouterLlmModels(),
+      openRouterAvailable: isOpenRouterLlmReachable(),
     },
   })
 }

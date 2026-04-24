@@ -1,4 +1,4 @@
-export type LlmMode = 'local' | 'cloud'
+export type LlmMode = 'local' | 'cloud' | 'openrouter'
 
 export type MeetingLlmMode = LlmMode
 

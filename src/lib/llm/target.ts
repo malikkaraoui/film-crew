@@ -5,9 +5,16 @@ const DISABLED_VALUES = new Set(['0', 'false', 'no', 'off'])
 
 const DEFAULT_LOCAL_MODEL_FALLBACK = 'qwen2.5:7b'
 const DEFAULT_CLOUD_MODEL_FALLBACK = 'deepseek-v3.1:671b-cloud'
+const DEFAULT_OPENROUTER_MODEL_FALLBACK = 'nvidia/nemotron-3-nano-30b-a3b:free'
 const FALLBACK_CLOUD_MODELS = [
   'deepseek-v3.1:671b-cloud',
   'gemma4:31b-cloud',
+]
+const FALLBACK_OPENROUTER_TEXT_MODELS = [
+  'nvidia/nemotron-3-nano-30b-a3b:free',
+  'google/gemini-2.0-flash-lite-001',
+  'meta-llama/llama-3.3-70b-instruct',
+  'qwen/qwen-2.5-72b-instruct',
 ]
 
 export const DEFAULT_LOCAL_LLM_MODEL = (process.env.OLLAMA_MODEL || DEFAULT_LOCAL_MODEL_FALLBACK).trim()
@@ -16,9 +23,16 @@ export const DEFAULT_CLOUD_LLM_MODEL = (
   || process.env.OLLAMA_STORYBOARD_CLOUD_MODEL
   || DEFAULT_CLOUD_MODEL_FALLBACK
 ).trim()
+export const DEFAULT_OPENROUTER_LLM_MODEL = (
+  process.env.OPENROUTER_DEFAULT_TEXT_MODEL
+  || process.env.DEFAULT_OPENROUTER_LLM_MODEL
+  || DEFAULT_OPENROUTER_MODEL_FALLBACK
+).trim()
 
 export function normalizeLlmMode(value: unknown): LlmMode {
-  return value === 'cloud' ? 'cloud' : 'local'
+  if (value === 'cloud') return 'cloud'
+  if (value === 'openrouter') return 'openrouter'
+  return 'local'
 }
 
 function parseList(value: string | undefined): string[] {
@@ -31,6 +45,12 @@ function parseList(value: string | undefined): string[] {
 export function getAvailableCloudLlmModels(): string[] {
   const configured = parseList(process.env.OLLAMA_CLOUD_MODELS || process.env.AVAILABLE_CLOUD_LLM_MODELS)
   const merged = [...configured, DEFAULT_CLOUD_LLM_MODEL, ...FALLBACK_CLOUD_MODELS]
+  return [...new Set(merged.filter(Boolean))]
+}
+
+export function getAvailableOpenRouterLlmModels(): string[] {
+  const configured = parseList(process.env.OPENROUTER_TEXT_MODELS || process.env.AVAILABLE_OPENROUTER_LLM_MODELS)
+  const merged = [...configured, DEFAULT_OPENROUTER_LLM_MODEL, ...FALLBACK_OPENROUTER_TEXT_MODELS]
   return [...new Set(merged.filter(Boolean))]
 }
 
@@ -47,6 +67,17 @@ export function normalizeLlmModelForMode(mode: LlmMode, model?: string | null): 
     }
 
     return DEFAULT_CLOUD_LLM_MODEL
+  }
+
+  if (normalizedMode === 'openrouter') {
+    if (!normalizedModel) return DEFAULT_OPENROUTER_LLM_MODEL
+
+    const knownOpenRouterModels = getAvailableOpenRouterLlmModels()
+    if (knownOpenRouterModels.includes(normalizedModel) || normalizedModel.includes('/')) {
+      return normalizedModel
+    }
+
+    return DEFAULT_OPENROUTER_MODEL_FALLBACK
   }
 
   return normalizedModel || DEFAULT_LOCAL_LLM_MODEL
@@ -79,6 +110,10 @@ export function isCloudLlmReachable(): boolean {
   return true
 }
 
+export function isOpenRouterLlmReachable(): boolean {
+  return Boolean(process.env.OPENROUTER_API_KEY?.trim())
+}
+
 export function resolveLlmTarget(mode: LlmMode, model?: string | null): {
   mode: LlmMode
   model: string
@@ -88,6 +123,33 @@ export function resolveLlmTarget(mode: LlmMode, model?: string | null): {
 } {
   const normalizedMode = normalizeLlmMode(mode)
   const normalizedModel = normalizeLlmModelForMode(normalizedMode, model)
+
+  if (normalizedMode === 'openrouter') {
+    const apiKey = process.env.OPENROUTER_API_KEY?.trim()
+    const headers: Record<string, string> = {}
+
+    if (apiKey) {
+      headers.Authorization = `Bearer ${apiKey}`
+    }
+
+    const referer = (process.env.OPENROUTER_HTTP_REFERER || process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || '').trim()
+    if (referer) {
+      headers['HTTP-Referer'] = referer
+    }
+
+    const title = (process.env.OPENROUTER_APP_TITLE || process.env.NEXT_PUBLIC_APP_NAME || 'FILM CREW').trim()
+    if (title) {
+      headers['X-Title'] = title
+    }
+
+    return {
+      mode: normalizedMode,
+      model: normalizedModel,
+      host: (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').trim(),
+      headers,
+      targetLabel: `openrouter · ${normalizedModel}`,
+    }
+  }
 
   if (normalizedMode === 'cloud') {
     const apiKey = getOllamaCloudApiKey()

@@ -108,7 +108,7 @@ export async function POST(
 
     const body = await request.json().catch(() => ({})) as {
       force?: boolean
-      meetingLlmMode?: 'local' | 'cloud'
+      meetingLlmMode?: 'local' | 'cloud' | 'openrouter'
       meetingLlmModel?: string
     }
 

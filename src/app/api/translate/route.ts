@@ -9,19 +9,20 @@ const LANGUAGE_LABELS = {
 } as const
 
 type SupportedLanguage = keyof typeof LANGUAGE_LABELS
+type TranslationMode = 'local' | 'cloud'
 
 type TranslateBody = {
   text?: string
   from?: SupportedLanguage
   to?: SupportedLanguage
-  mode?: 'local' | 'cloud'
+  mode?: TranslationMode
   purpose?: 'prompt-review' | 'generic'
 }
 
 type TranslationResponse = {
   text: string
   provider: string
-  mode: 'local' | 'cloud'
+  mode: TranslationMode
   model: string
 }
 
@@ -53,7 +54,7 @@ async function runTranslation(
   text: string,
   from: SupportedLanguage,
   to: SupportedLanguage,
-  mode: 'local' | 'cloud',
+  mode: TranslationMode,
   purpose: TranslateBody['purpose'],
 ): Promise<TranslationResponse> {
   const llmTarget = resolveLlmTarget(mode)
@@ -81,7 +82,7 @@ async function runTranslation(
   return {
     text: result.content.trim(),
     provider: provider.name,
-    mode: llmTarget.mode,
+    mode: llmTarget.mode === 'cloud' ? 'cloud' : 'local',
     model: llmTarget.model,
   }
 }

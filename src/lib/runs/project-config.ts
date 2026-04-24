@@ -4,6 +4,7 @@ import type { GenerationMode, LlmMode, OutputConfig, ProjectConfig, ReferenceIma
 import {
   DEFAULT_CLOUD_LLM_MODEL,
   DEFAULT_LOCAL_LLM_MODEL,
+  DEFAULT_OPENROUTER_LLM_MODEL,
   normalizeLlmModelForMode,
   normalizeLlmMode,
 } from '@/lib/llm/target'
@@ -55,6 +56,7 @@ function normalizeReferenceImages(input?: Partial<ReferenceImageConfig> | null):
 
 export const DEFAULT_LOCAL_MEETING_MODEL = DEFAULT_LOCAL_LLM_MODEL
 export const DEFAULT_CLOUD_MEETING_MODEL = DEFAULT_CLOUD_LLM_MODEL
+export const DEFAULT_OPENROUTER_MEETING_MODEL = DEFAULT_OPENROUTER_LLM_MODEL
 
 export function normalizeMeetingLlmMode(value: unknown): LlmMode {
   return normalizeLlmMode(value)
@@ -70,7 +72,10 @@ function getDefaultModelForStep(stepKey: LlmStepKey, mode: LlmMode, fallbackMode
     return DEFAULT_CLOUD_MEETING_MODEL
   }
 
-  return fallbackModel || (mode === 'cloud' ? DEFAULT_CLOUD_MEETING_MODEL : DEFAULT_LOCAL_MEETING_MODEL)
+  if (fallbackModel) return fallbackModel
+  if (mode === 'cloud') return DEFAULT_CLOUD_MEETING_MODEL
+  if (mode === 'openrouter') return DEFAULT_OPENROUTER_MEETING_MODEL
+  return DEFAULT_LOCAL_MEETING_MODEL
 }
 
 function buildStepConfig(
@@ -126,7 +131,9 @@ export function buildProjectConfig(input?: Partial<ProjectConfig> | null): Proje
   const configuredMeetingModel = typeof input?.meetingLlmModel === 'string' ? input.meetingLlmModel.trim() : ''
   const fallbackMeetingModel = meetingLlmMode === 'cloud'
     ? DEFAULT_CLOUD_MEETING_MODEL
-    : DEFAULT_LOCAL_MEETING_MODEL
+    : meetingLlmMode === 'openrouter'
+      ? DEFAULT_OPENROUTER_MEETING_MODEL
+      : DEFAULT_LOCAL_MEETING_MODEL
   const meetingFallback = {
     mode: meetingLlmMode,
     model: configuredMeetingModel || fallbackMeetingModel,
