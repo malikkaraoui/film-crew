@@ -3,11 +3,11 @@ import { join } from 'path'
 import { executeWithFailover } from '@/lib/providers/failover'
 import { db } from '@/lib/db/connection'
 import { clip } from '@/lib/db/schema'
-import type { VideoProvider, TTSProvider } from '@/lib/providers/types'
+import type { VideoProvider } from '@/lib/providers/types'
 import { logger } from '@/lib/logger'
 import type { PipelineStep, StepContext, StepResult } from '../types'
 import { readProjectConfig } from '@/lib/runs/project-config'
-import { pickBackgroundMusic } from '@/lib/providers/music/local-music'
+import { resolveMusicFromStructure } from '@/lib/audio/scene-assets'
 import type { ProviderPromptMap } from '@/lib/pipeline/provider-prompting'
 import { resolveProviderPrompt } from '@/lib/pipeline/provider-prompting'
 
@@ -16,12 +16,6 @@ type PromptEntry = {
   prompt: string
   negativePrompt?: string
   providerPrompts?: ProviderPromptMap
-}
-
-type StructureForAudio = {
-  scenes?: { dialogue?: string }[]
-  tone?: string
-  style?: string
 }
 
 type AudioMasterManifestRef = {
@@ -37,6 +31,10 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+/**
+ * Source audio canonique = audio/audio-master-manifest.json produit par step-4c-audio.
+ * Aucun fallback TTS — si l'audio est absent, on continue sans audio.
+ */
 async function resolveMasterAudioPath(storagePath: string, runId: string): Promise<string | null> {
   try {
     const raw = await readFile(join(storagePath, 'audio', 'audio-master-manifest.json'), 'utf-8')
@@ -44,6 +42,7 @@ async function resolveMasterAudioPath(storagePath: string, runId: string): Promi
     const masterFilePath = manifest.masterFilePath ?? null
 
     if (!masterFilePath) {
+      logger.warn({ event: 'master_audio_manifest_no_path', runId })
       return null
     }
 
@@ -52,7 +51,7 @@ async function resolveMasterAudioPath(storagePath: string, runId: string): Promi
       return masterFilePath
     }
 
-    logger.warn({ event: 'master_audio_missing', runId, path: masterFilePath })
+    logger.warn({ event: 'master_audio_file_missing', runId, path: masterFilePath })
     return null
   } catch {
     logger.info({ event: 'generation_master_audio_unavailable', runId })
@@ -68,14 +67,14 @@ export const step6Generation: PipelineStep = {
     const projectConfig = await readProjectConfig(ctx.storagePath)
     const referenceImageUrls = projectConfig?.referenceImages?.urls ?? []
     const generationMode = projectConfig?.generationMode ?? 'manual'
-    const masterAudioPath = await resolveMasterAudioPath(ctx.storagePath, ctx.runId)
 
-    let structure: StructureForAudio | null = null
-    try {
-      const raw = await readFile(join(ctx.storagePath, 'structure.json'), 'utf-8')
-      structure = JSON.parse(raw) as StructureForAudio
-    } catch (e) {
-      logger.warn({ event: 'structure_unavailable_for_audio', runId: ctx.runId, error: (e as Error).message })
+    // Source audio canonique — pas de régénération TTS ici
+    const audioPath = await resolveMasterAudioPath(ctx.storagePath, ctx.runId)
+
+    // Source musique canonique — même résolveur que step-4c-audio
+    const musicPath = await resolveMusicFromStructure(ctx.storagePath)
+    if (musicPath) {
+      logger.info({ event: 'generation_music_resolved', runId: ctx.runId, path: musicPath })
     }
 
     if (generationMode !== 'automatic') {
@@ -83,8 +82,8 @@ export const step6Generation: PipelineStep = {
         join(ctx.storagePath, 'generation-manifest.json'),
         JSON.stringify({
           clips: [],
-          audioPath: masterAudioPath,
-          musicPath: null,
+          audioPath,
+          musicPath,
           generationMode: 'manual',
           note: 'Génération provider désactivée en automatique — lancer manuellement scène par scène.',
           generatedAt: new Date().toISOString(),
@@ -103,7 +102,7 @@ export const step6Generation: PipelineStep = {
         outputData: {
           clipCount: 0,
           totalPrompts: 0,
-          hasAudio: !!masterAudioPath,
+          hasAudio: !!audioPath,
           generationMode: 'manual',
           autoGenerationSkipped: true,
         },
@@ -204,44 +203,6 @@ export const step6Generation: PipelineStep = {
           retries: 1,
         })
       }
-    }
-
-    let audioPath: string | null = masterAudioPath
-    if (!audioPath && structure?.scenes?.length) {
-      const narration = structure.scenes
-        .map((scene) => scene.dialogue ?? '')
-        .filter(Boolean)
-        .join(' ')
-
-      if (narration) {
-        try {
-          const { result } = await executeWithFailover(
-            'tts',
-            async (p) => {
-              const tts = p as TTSProvider
-              return tts.synthesize(narration, 'default', 'fr', ctx.storagePath)
-            },
-            ctx.runId,
-          )
-          totalCost += result.costEur
-          audioPath = result.filePath
-        } catch (e) {
-          logger.warn({ event: 'tts_failed', runId: ctx.runId, error: (e as Error).message })
-        }
-      }
-    } else if (!audioPath) {
-      logger.warn({ event: 'tts_skipped_no_structure', runId: ctx.runId })
-    }
-
-    let musicPath: string | null = null
-    try {
-      const tone = structure?.tone ?? structure?.style ?? undefined
-      musicPath = await pickBackgroundMusic(tone, ctx.runId)
-      if (musicPath) {
-        logger.info({ event: 'music_selected', runId: ctx.runId, path: musicPath, tone })
-      }
-    } catch (e) {
-      logger.warn({ event: 'music_selection_failed', runId: ctx.runId, error: (e as Error).message })
     }
 
     await writeFile(
