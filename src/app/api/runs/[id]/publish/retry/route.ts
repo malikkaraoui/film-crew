@@ -85,9 +85,10 @@ export async function POST(
       : ['#shorts', '#ai', '#filmcrew']
   }
 
-  // Récupérer le retryCount précédent pour l'incrémenter
+  // Récupérer le retryCount précédent pour l'incrémenter (spécifique à la plateforme)
   const previous = await readPublishResult(id, join(storagePath, 'final'))
-  const retryCount = (previous?.retryCount ?? 0) + 1
+  const previousRetryCount = previous?.platform === platform ? (previous.retryCount ?? 0) : 0
+  const retryCount = previousRetryCount + 1
 
   logger.info({ event: 'publish_retry_start', runId: id, platform, retryCount, fromPackage: !!pkg })
 

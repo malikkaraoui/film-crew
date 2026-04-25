@@ -106,3 +106,19 @@ export async function upsertPublishManifest(
 
   return manifest
 }
+
+/**
+ * Lit le publish-manifest.json d'un run, ou null s'il est absent.
+ */
+export async function readPublishManifest(
+  runId: string,
+  storagePath?: string,
+): Promise<PublishManifest | null> {
+  const runDir = storagePath ?? join(process.cwd(), 'storage', 'runs', runId)
+  try {
+    const raw = await readFile(join(runDir, 'publish-manifest.json'), 'utf-8')
+    return JSON.parse(raw) as PublishManifest
+  } catch {
+    return null
+  }
+}

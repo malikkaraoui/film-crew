@@ -38,7 +38,7 @@ export async function GET(
     }
 
     logger.info({ event: 'publish_preflight_start', runId: id, platform })
-  const report = await runPublishPreflight(id, platform, join(process.cwd(), 'storage', 'runs', id))
+    const report = await runPublishPreflight(id, platform, join(process.cwd(), 'storage', 'runs', id))
     logger.info({ event: 'publish_preflight_done', runId: id, platform, ready: report.ready, nextAction: report.nextAction })
     return NextResponse.json({ data: report }, { status: report.ready ? 200 : 422 })
   } catch (e) {

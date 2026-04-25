@@ -21,14 +21,31 @@ type PreviewManifest = {
  * Retourne un PublishControl : état, dernier résultat, santé plateforme, prochaine action.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params
-    const control = await getPublishControl(id, join(process.cwd(), 'storage', 'runs', id, 'final'))
+    const url = new URL(request.url)
+    const platform = url.searchParams.get('platform') as 'tiktok' | 'youtube_shorts' | null ?? undefined
+    const finalDir = join(process.cwd(), 'storage', 'runs', id, 'final')
+    const control = await getPublishControl(id, finalDir, platform)
     logger.info({ event: 'publish_control_fetched', runId: id, state: control.state, nextAction: control.nextAction })
-    return NextResponse.json({ data: control })
+    // Compat rétro : aplatir lastResult pour les consommateurs existants (pré-C1)
+    const compat = control.lastResult
+      ? {
+          status: control.lastResult.status,
+          publishId: control.lastResult.publishId,
+          videoId: control.lastResult.videoId,
+          publishedAt: control.lastResult.publishedAt,
+          profileUrl: control.lastResult.profileUrl,
+          error: control.lastResult.error,
+          credentials: control.lastResult.credentials,
+          instructions: control.lastResult.instructions,
+          tiktokHealth: control.platformHealth.tiktok,
+        }
+      : { status: 'not_published' as const, tiktokHealth: control.platformHealth.tiktok }
+    return NextResponse.json({ data: { ...control, ...compat } })
   } catch (e) {
     logger.error({ event: 'publish_control_error', error: (e as Error).message })
     return NextResponse.json(
@@ -71,9 +88,19 @@ export async function POST(
 
   // C1.2 — Mode dry_run : retourne le rapport preflight sans publier
   if (body.dry_run) {
-    const platform = isSupportedPlatform(body.platform) ? body.platform : 'tiktok'
-    logger.info({ event: 'publish_dry_run', runId: id, platform })
-    const report = await runPublishPreflight(id, platform, join(process.cwd(), 'storage', 'runs', id))
+    if (!isSupportedPlatform(body.platform)) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'UNSUPPORTED_PLATFORM',
+            message: `Plateforme "${body.platform}" non supportée. Plateformes disponibles : ${SUPPORTED_PUBLISH_PLATFORMS.join(', ')}`,
+          },
+        },
+        { status: 400 },
+      )
+    }
+    logger.info({ event: 'publish_dry_run', runId: id, platform: body.platform })
+    const report = await runPublishPreflight(id, body.platform, join(process.cwd(), 'storage', 'runs', id))
     return NextResponse.json({ data: report }, { status: report.ready ? 200 : 422 })
   }
 

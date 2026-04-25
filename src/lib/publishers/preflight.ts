@@ -48,11 +48,12 @@ export async function runPublishPreflight(
 
     try {
       const s = await stat(absPath)
-      const sizeMB = Math.round(s.size / 1024 / 1024)
+      const isEmpty = s.size === 0
+      const sizeMB = (s.size / 1024 / 1024).toFixed(2)
       checks.push({
         name: 'video_file',
-        status: sizeMB === 0 ? 'warning' : 'ok',
-        detail: sizeMB === 0 ? 'Fichier vidéo présent mais vide (0 MB)' : `${sizeMB} MB`,
+        status: isEmpty ? 'warning' : 'ok',
+        detail: isEmpty ? `Fichier vidéo présent mais vide (${sizeMB} MB)` : `${sizeMB} MB`,
       })
     } catch {
       checks.push({
@@ -61,11 +62,15 @@ export async function runPublishPreflight(
         detail: `Fichier vidéo introuvable : ${absPath}`,
       })
     }
-  } else if (checks.find((c) => c.name === 'preview_manifest')?.status !== 'error') {
+  } else {
+    // preview_manifest absent ou mode=none : indiquer explicitement qu'aucune vidéo n'est disponible
+    const manifestError = checks.find((c) => c.name === 'preview_manifest')?.status === 'error'
     checks.push({
       name: 'video_file',
       status: 'error',
-      detail: "Aucun fichier vidéo disponible — preview mode=none",
+      detail: manifestError
+        ? "Impossible de résoudre le fichier vidéo sans preview-manifest.json"
+        : "Aucun fichier vidéo disponible — preview mode=none",
     })
   }
 

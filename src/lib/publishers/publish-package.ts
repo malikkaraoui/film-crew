@@ -11,8 +11,8 @@ import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import type { PublishPackage } from './platform-types'
 
-function resolveFinalDir(runId: string, storagePath?: string): string {
-  return storagePath ?? join(process.cwd(), 'storage', 'runs', runId, 'final')
+function resolveFinalDir(runId: string, finalDir?: string): string {
+  return finalDir ?? join(process.cwd(), 'storage', 'runs', runId, 'final')
 }
 
 /**
@@ -60,11 +60,11 @@ export function buildPublishPackage(opts: {
 export async function savePublishPackage(
   runId: string,
   pkg: PublishPackage,
-  storagePath?: string,
+  finalDir?: string,
 ): Promise<void> {
-  const finalDir = resolveFinalDir(runId, storagePath)
-  await mkdir(finalDir, { recursive: true })
-  await writeFile(join(finalDir, 'publish-package.json'), JSON.stringify(pkg, null, 2))
+  const resolvedFinalDir = resolveFinalDir(runId, finalDir)
+  await mkdir(resolvedFinalDir, { recursive: true })
+  await writeFile(join(resolvedFinalDir, 'publish-package.json'), JSON.stringify(pkg, null, 2))
 }
 
 /**
@@ -72,11 +72,11 @@ export async function savePublishPackage(
  */
 export async function readPublishPackage(
   runId: string,
-  storagePath?: string,
+  finalDir?: string,
 ): Promise<PublishPackage | null> {
   try {
     const raw = await readFile(
-      join(resolveFinalDir(runId, storagePath), 'publish-package.json'),
+      join(resolveFinalDir(runId, finalDir), 'publish-package.json'),
       'utf-8',
     )
     return JSON.parse(raw) as PublishPackage
