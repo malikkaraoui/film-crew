@@ -13,8 +13,9 @@ import type { PreflightCheck, PreflightReport, PublishPlatform } from './platfor
 export async function runPublishPreflight(
   runId: string,
   platform: PublishPlatform,
+  storagePath?: string,
 ): Promise<PreflightReport> {
-  const storagePath = join(process.cwd(), 'storage', 'runs', runId)
+  const runStoragePath = storagePath ?? join(process.cwd(), 'storage', 'runs', runId)
   const checks: PreflightCheck[] = []
 
   // ── Check 1 : preview-manifest.json ────────────────────────────────────
@@ -22,7 +23,7 @@ export async function runPublishPreflight(
   let videoPath: string | null = null
 
   try {
-    const raw = await readFile(join(storagePath, 'preview-manifest.json'), 'utf-8')
+    const raw = await readFile(join(runStoragePath, 'preview-manifest.json'), 'utf-8')
     const pm = JSON.parse(raw)
     previewMode = pm.mode ?? 'none'
     videoPath = pm.playableFilePath ?? null
@@ -43,7 +44,7 @@ export async function runPublishPreflight(
   if (previewMode !== 'none') {
     const absPath = videoPath
       ? (isAbsolute(videoPath) ? videoPath : join(process.cwd(), videoPath.replace(/^\//, '')))
-      : join(storagePath, 'final', previewMode === 'video_finale' ? 'video.mp4' : 'animatic.mp4')
+      : join(runStoragePath, 'final', previewMode === 'video_finale' ? 'video.mp4' : 'animatic.mp4')
 
     try {
       const s = await stat(absPath)
@@ -84,7 +85,7 @@ export async function runPublishPreflight(
 
   // ── Check 4 : metadata.json ─────────────────────────────────────────────
   try {
-    await readFile(join(storagePath, 'final', 'metadata.json'), 'utf-8')
+    await readFile(join(runStoragePath, 'final', 'metadata.json'), 'utf-8')
     checks.push({ name: 'metadata', status: 'ok', detail: 'metadata.json présent' })
   } catch {
     checks.push({
@@ -96,7 +97,7 @@ export async function runPublishPreflight(
 
   // ── Check 5 : publish-package.json (C1.1) ──────────────────────────────
   try {
-    await readFile(join(storagePath, 'final', 'publish-package.json'), 'utf-8')
+    await readFile(join(runStoragePath, 'final', 'publish-package.json'), 'utf-8')
     checks.push({ name: 'publish_package', status: 'ok', detail: 'paquet canonique présent' })
   } catch {
     checks.push({

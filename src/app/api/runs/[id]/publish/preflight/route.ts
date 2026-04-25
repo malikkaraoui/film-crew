@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { runPublishPreflight } from '@/lib/publishers/preflight'
 import { isSupportedPlatform, SUPPORTED_PUBLISH_PLATFORMS } from '@/lib/publishers/factory'
 import { logger } from '@/lib/logger'
+import { join } from 'path'
 
 /**
  * GET /api/runs/[id]/publish/preflight?platform=tiktok
@@ -37,7 +38,7 @@ export async function GET(
     }
 
     logger.info({ event: 'publish_preflight_start', runId: id, platform })
-    const report = await runPublishPreflight(id, platform)
+  const report = await runPublishPreflight(id, platform, join(process.cwd(), 'storage', 'runs', id))
     logger.info({ event: 'publish_preflight_done', runId: id, platform, ready: report.ready, nextAction: report.nextAction })
     return NextResponse.json({ data: report }, { status: report.ready ? 200 : 422 })
   } catch (e) {

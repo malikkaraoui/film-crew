@@ -73,7 +73,7 @@ export async function POST(
   if (body.dry_run) {
     const platform = isSupportedPlatform(body.platform) ? body.platform : 'tiktok'
     logger.info({ event: 'publish_dry_run', runId: id, platform })
-    const report = await runPublishPreflight(id, platform)
+    const report = await runPublishPreflight(id, platform, join(process.cwd(), 'storage', 'runs', id))
     return NextResponse.json({ data: report }, { status: report.ready ? 200 : 422 })
   }
 
