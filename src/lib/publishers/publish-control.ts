@@ -47,9 +47,9 @@ function deriveNextAction(state: PublishControlState): {
  * Retourne l'état de publication consolidé pour l'opérateur.
  * Aucun effet de bord — lecture seule.
  */
-export async function getPublishControl(runId: string): Promise<PublishControl> {
+export async function getPublishControl(runId: string, finalDir?: string): Promise<PublishControl> {
   const [lastResult, tiktokHealth] = await Promise.all([
-    readPublishResult(runId),
+    readPublishResult(runId, finalDir),
     tiktokHealthCheck(),
   ])
 

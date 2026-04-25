@@ -26,7 +26,7 @@ export async function GET(
 ) {
   try {
     const { id } = await params
-    const control = await getPublishControl(id)
+    const control = await getPublishControl(id, join(process.cwd(), 'storage', 'runs', id, 'final'))
     logger.info({ event: 'publish_control_fetched', runId: id, state: control.state, nextAction: control.nextAction })
     return NextResponse.json({ data: control })
   } catch (e) {
@@ -112,7 +112,7 @@ export async function POST(
       hashtags: [],
       mediaMode: 'none',
     }
-    await savePublishResult(id, result)
+    await savePublishResult(id, result, join(storagePath, 'final'))
     return NextResponse.json({ data: result }, { status: 422 })
   }
 
@@ -144,8 +144,8 @@ export async function POST(
   })
 
   // Persister : publish-result.json (dernière pub) + publish-manifest.json (historique)
-  await savePublishResult(id, result)
-  await upsertPublishManifest(id, result, { title, hashtags })
+  await savePublishResult(id, result, join(storagePath, 'final'))
+  await upsertPublishManifest(id, result, { title, hashtags }, storagePath)
 
   logger.info({
     event: 'publish_complete',

@@ -59,8 +59,9 @@ export async function upsertPublishManifest(
   runId: string,
   result: PublishResult,
   opts: { title: string; hashtags: string[] },
+  storagePath?: string,
 ): Promise<PublishManifest> {
-  const runDir = join(process.cwd(), 'storage', 'runs', runId)
+  const runDir = storagePath ?? join(process.cwd(), 'storage', 'runs', runId)
   const manifestPath = join(runDir, 'publish-manifest.json')
 
   let existing: PublishManifest | null = null

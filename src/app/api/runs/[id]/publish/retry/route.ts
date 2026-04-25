@@ -86,7 +86,7 @@ export async function POST(
   }
 
   // Récupérer le retryCount précédent pour l'incrémenter
-  const previous = await readPublishResult(id)
+  const previous = await readPublishResult(id, join(storagePath, 'final'))
   const retryCount = (previous?.retryCount ?? 0) + 1
 
   logger.info({ event: 'publish_retry_start', runId: id, platform, retryCount, fromPackage: !!pkg })
@@ -94,8 +94,8 @@ export async function POST(
   const result = await publishToPlatform(platform, { runId: id, videoPath, title, hashtags, mediaMode })
   const resultWithRetry = { ...result, retryCount }
 
-  await savePublishResult(id, resultWithRetry)
-  await upsertPublishManifest(id, result, { title, hashtags })
+  await savePublishResult(id, resultWithRetry, join(storagePath, 'final'))
+  await upsertPublishManifest(id, result, { title, hashtags }, storagePath)
 
   logger.info({
     event: 'publish_retry_complete',

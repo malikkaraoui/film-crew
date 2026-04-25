@@ -295,22 +295,24 @@ describe('step8Publish — persistance résultat', () => {
   it('savePublishResult appelé avec (runId, result)', async () => {
     setupReadFiles(PREVIEW_NONE)
     setupPublishers()
-    await step8Publish.execute(makeCtx())
+    await step8Publish.execute(makeCtx('/tmp/run_test'))
     expect(mockSavePublishResult).toHaveBeenCalledOnce()
-    const [runId, result] = mockSavePublishResult.mock.calls[0]
+    const [runId, result, finalDir] = mockSavePublishResult.mock.calls[0]
     expect(runId).toBe('run_test')
     expect(result).toMatchObject({ platform: 'tiktok', status: 'NO_CREDENTIALS' })
+    expect(finalDir).toBe('/tmp/run_test/final')
   })
 
   it('upsertPublishManifest appelé avec (runId, result, { title, hashtags })', async () => {
     setupReadFiles(PREVIEW_NONE, { title: 'Titre upsert' })
     setupPublishers()
-    await step8Publish.execute(makeCtx())
+    await step8Publish.execute(makeCtx('/tmp/run_test'))
     expect(mockUpsertPublishManifest).toHaveBeenCalledOnce()
-    const [runId, , opts] = mockUpsertPublishManifest.mock.calls[0]
+    const [runId, , opts, storagePath] = mockUpsertPublishManifest.mock.calls[0]
     expect(runId).toBe('run_test')
     expect(opts.title).toBe('Titre upsert')
     expect(opts.hashtags).toEqual(['#shorts', '#ai', '#filmcrew'])
+    expect(storagePath).toBe('/tmp/run_test')
   })
 })
 

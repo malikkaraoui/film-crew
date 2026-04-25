@@ -138,8 +138,8 @@ export const step8Publish: PipelineStep = {
     })
 
     // Persister : publish-result.json (dernière pub) + publish-manifest.json (historique)
-    await savePublishResult(ctx.runId, publishResult)
-    await upsertPublishManifest(ctx.runId, publishResult, { title, hashtags })
+    await savePublishResult(ctx.runId, publishResult, finalDir)
+    await upsertPublishManifest(ctx.runId, publishResult, { title, hashtags }, ctx.storagePath)
 
     logger.info({
       event: 'publish_ready',
