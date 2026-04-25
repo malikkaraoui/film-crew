@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server'
 import { readFile } from 'fs/promises'
 import { isAbsolute, join } from 'path'
-import { savePublishResult, readPublishResult, tiktokHealthCheck } from '@/lib/publishers/tiktok'
+import { savePublishResult } from '@/lib/publishers/tiktok'
 import { publishToPlatform, isSupportedPlatform, upsertPublishManifest, SUPPORTED_PUBLISH_PLATFORMS } from '@/lib/publishers/factory'
+import { runPublishPreflight } from '@/lib/publishers/preflight'
+import { getPublishControl } from '@/lib/publishers/publish-control'
 import { logger } from '@/lib/logger'
 
 type PreviewManifest = {
@@ -14,30 +16,38 @@ type PreviewManifest = {
 
 /**
  * GET /api/runs/[id]/publish
- * Retourne le statut de publication actuel du run (publish-result.json).
- * Si aucun publish-result.json n'existe : { status: 'not_published' }.
+ *
+ * C1.4 — Contrôle opérateur enrichi.
+ * Retourne un PublishControl : état, dernier résultat, santé plateforme, prochaine action.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const { id } = await params
-    const result = await readPublishResult(id)
-
-    if (!result) {
-      const health = await tiktokHealthCheck()
-      return NextResponse.json({
-        data: {
-          status: 'not_published',
-          tiktokHealth: health,
-        },
-      })
-    }
-
-    logger.info({ event: 'publish_status_fetched', runId: id, status: result.status })
-    return NextResponse.json({ data: result })
+    const url = new URL(request.url)
+    const platform = url.searchParams.get('platform') as 'tiktok' | 'youtube_shorts' | null ?? undefined
+    const finalDir = join(process.cwd(), 'storage', 'runs', id, 'final')
+    const control = await getPublishControl(id, finalDir, platform)
+    logger.info({ event: 'publish_control_fetched', runId: id, state: control.state, nextAction: control.nextAction })
+    // Compat rétro : aplatir lastResult pour les consommateurs existants (pré-C1)
+    const compat = control.lastResult
+      ? {
+          status: control.lastResult.status,
+          publishId: control.lastResult.publishId,
+          videoId: control.lastResult.videoId,
+          publishedAt: control.lastResult.publishedAt,
+          profileUrl: control.lastResult.profileUrl,
+          error: control.lastResult.error,
+          credentials: control.lastResult.credentials,
+          instructions: control.lastResult.instructions,
+          tiktokHealth: control.platformHealth.tiktok,
+        }
+      : { status: 'not_published' as const, tiktokHealth: control.platformHealth.tiktok }
+    return NextResponse.json({ data: { ...control, ...compat } })
   } catch (e) {
+    logger.error({ event: 'publish_control_error', error: (e as Error).message })
     return NextResponse.json(
       { error: { code: 'PUBLISH_STATUS_ERROR', message: (e as Error).message } },
       { status: 500 },
@@ -66,7 +76,7 @@ export async function POST(
 ) {
   const { id } = await params
 
-  let body: { platform: string }
+  let body: { platform: string; dry_run?: boolean }
   try {
     body = await request.json()
   } catch {
@@ -74,6 +84,24 @@ export async function POST(
       { error: { code: 'BAD_REQUEST', message: 'Corps JSON invalide' } },
       { status: 400 },
     )
+  }
+
+  // C1.2 — Mode dry_run : retourne le rapport preflight sans publier
+  if (body.dry_run) {
+    if (!isSupportedPlatform(body.platform)) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'UNSUPPORTED_PLATFORM',
+            message: `Plateforme "${body.platform}" non supportée. Plateformes disponibles : ${SUPPORTED_PUBLISH_PLATFORMS.join(', ')}`,
+          },
+        },
+        { status: 400 },
+      )
+    }
+    logger.info({ event: 'publish_dry_run', runId: id, platform: body.platform })
+    const report = await runPublishPreflight(id, body.platform, join(process.cwd(), 'storage', 'runs', id))
+    return NextResponse.json({ data: report }, { status: report.ready ? 200 : 422 })
   }
 
   if (!isSupportedPlatform(body.platform)) {
@@ -111,7 +139,7 @@ export async function POST(
       hashtags: [],
       mediaMode: 'none',
     }
-    await savePublishResult(id, result)
+    await savePublishResult(id, result, join(storagePath, 'final'))
     return NextResponse.json({ data: result }, { status: 422 })
   }
 
@@ -143,8 +171,8 @@ export async function POST(
   })
 
   // Persister : publish-result.json (dernière pub) + publish-manifest.json (historique)
-  await savePublishResult(id, result)
-  await upsertPublishManifest(id, result, { title, hashtags })
+  await savePublishResult(id, result, join(storagePath, 'final'))
+  await upsertPublishManifest(id, result, { title, hashtags }, storagePath)
 
   logger.info({
     event: 'publish_complete',

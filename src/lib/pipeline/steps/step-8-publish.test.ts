@@ -6,15 +6,21 @@ import { join } from 'path'
 
 vi.mock('@/lib/publishers/tiktok')
 vi.mock('@/lib/publishers/factory')
+vi.mock('@/lib/publishers/publish-package', () => ({
+  buildPublishPackage: vi.fn().mockReturnValue({}),
+  savePublishPackage: vi.fn().mockResolvedValue(undefined),
+}))
 vi.mock('@/lib/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }))
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
   writeFile: vi.fn().mockResolvedValue(undefined),
+  mkdir: vi.fn().mockResolvedValue(undefined),
 }))
 
 import { readFile, writeFile } from 'fs/promises'
 import { savePublishResult } from '@/lib/publishers/tiktok'
 import { publishToPlatform, upsertPublishManifest } from '@/lib/publishers/factory'
+import { savePublishPackage } from '@/lib/publishers/publish-package'
 import { step8Publish } from './step-8-publish'
 import type { StepContext } from '../types'
 import type { PublishResult } from '@/lib/publishers/tiktok'
@@ -27,6 +33,7 @@ const mockWriteFile = writeFile as MockedFunction<typeof writeFile>
 const mockSavePublishResult = savePublishResult as MockedFunction<typeof savePublishResult>
 const mockPublishToPlatform = publishToPlatform as MockedFunction<typeof publishToPlatform>
 const mockUpsertPublishManifest = upsertPublishManifest as MockedFunction<typeof upsertPublishManifest>
+const mockSavePublishPackage = savePublishPackage as MockedFunction<typeof savePublishPackage>
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -248,6 +255,14 @@ describe('step8Publish — metadata.json', () => {
     const writeCall = mockWriteFile.mock.calls.find((c) => String(c[0]).includes('metadata.json'))!
     expect(String(writeCall[0])).toBe('/tmp/run_test/final/metadata.json')
   })
+
+  it('publish-package sauvegardé dans storagePath/final/', async () => {
+    setupReadFiles(PREVIEW_NONE)
+    setupPublishers()
+    await step8Publish.execute(makeCtx('/tmp/run_test'))
+    expect(mockSavePublishPackage).toHaveBeenCalledOnce()
+    expect(mockSavePublishPackage.mock.calls[0][2]).toBe('/tmp/run_test/final')
+  })
 })
 
 // ─── publishToPlatform ────────────────────────────────────────────────────────
@@ -280,22 +295,24 @@ describe('step8Publish — persistance résultat', () => {
   it('savePublishResult appelé avec (runId, result)', async () => {
     setupReadFiles(PREVIEW_NONE)
     setupPublishers()
-    await step8Publish.execute(makeCtx())
+    await step8Publish.execute(makeCtx('/tmp/run_test'))
     expect(mockSavePublishResult).toHaveBeenCalledOnce()
-    const [runId, result] = mockSavePublishResult.mock.calls[0]
+    const [runId, result, finalDir] = mockSavePublishResult.mock.calls[0]
     expect(runId).toBe('run_test')
     expect(result).toMatchObject({ platform: 'tiktok', status: 'NO_CREDENTIALS' })
+    expect(finalDir).toBe('/tmp/run_test/final')
   })
 
   it('upsertPublishManifest appelé avec (runId, result, { title, hashtags })', async () => {
     setupReadFiles(PREVIEW_NONE, { title: 'Titre upsert' })
     setupPublishers()
-    await step8Publish.execute(makeCtx())
+    await step8Publish.execute(makeCtx('/tmp/run_test'))
     expect(mockUpsertPublishManifest).toHaveBeenCalledOnce()
-    const [runId, , opts] = mockUpsertPublishManifest.mock.calls[0]
+    const [runId, , opts, storagePath] = mockUpsertPublishManifest.mock.calls[0]
     expect(runId).toBe('run_test')
     expect(opts.title).toBe('Titre upsert')
     expect(opts.hashtags).toEqual(['#shorts', '#ai', '#filmcrew'])
+    expect(storagePath).toBe('/tmp/run_test')
   })
 })
 

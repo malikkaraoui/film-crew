@@ -166,10 +166,13 @@ describe.skipIf(!FFMPEG_AVAILABLE)('Smoke — step-4c → step-7 (ffmpeg réel)'
     expect(s.size).toBeGreaterThan(0)
   })
 
-  it('step-4c : sttValidation absent par défaut (STT_ENABLED non défini)', () => {
-    const data = step4cResult.outputData as Record<string, unknown>
-    expect(data.sttValidation).toBeUndefined()
-  })
+  it.skipIf(process.env.STT_ENABLED === 'true')(
+    'step-4c : sttValidation absent par défaut (STT_ENABLED non défini)',
+    () => {
+      const data = step4cResult.outputData as Record<string, unknown>
+      expect(data.sttValidation).toBeUndefined()
+    },
+  )
 
   it('step-4c : audio enrichi — fxCount > 0, ambiancePath non null, musicPath booleanisable', () => {
     const data = step4cResult.outputData as Record<string, unknown>
@@ -194,6 +197,55 @@ describe.skipIf(!FFMPEG_AVAILABLE)('Smoke — step-4c → step-7 (ffmpeg réel)'
 
   it('step-7 : audioPath pointe vers master.wav', () => {
     expect(String(previewManifest.audioPath)).toContain('master.wav')
+  })
+
+  // ─── Sous-titres word-level (Lot B) ──────────────────────────────────────
+
+  describe('Sous-titres word-level — step-7 avec ENABLE_SUBTITLES=true', () => {
+    let subDir: string
+    let subManifest: Record<string, unknown>
+
+    beforeAll(async () => {
+      subDir = await mkdtemp(join(tmpdir(), 'smoke-sub-'))
+      await buildFixtures(subDir)
+      vi.mocked(renderDialogueToTTS).mockResolvedValue({ ...SMOKE_TTS_MANIFEST, runId: 'smoke-sub' })
+
+      await step4cAudio.execute({ ...makeCtx(subDir), runId: 'smoke-sub' })
+
+      const masterPath = join(subDir, 'audio', 'master.wav')
+      await writeFile(
+        join(subDir, 'generation-manifest.json'),
+        JSON.stringify({ clips: [], audioPath: masterPath, musicPath: null }),
+      )
+
+      // template enableSubtitles=true — évite la variable d'env globale
+      await step7Preview.execute({
+        ...makeCtx(subDir),
+        runId: 'smoke-sub',
+        template: { enableSubtitles: true } as unknown as StepContext['template'],
+      })
+
+      const raw = await readFile(join(subDir, 'preview-manifest.json'), 'utf-8')
+      subManifest = JSON.parse(raw) as Record<string, unknown>
+    })
+
+    afterAll(async () => {
+      await rm(subDir, { recursive: true, force: true })
+    })
+
+    it('preview-manifest.json — srtPath non null, extension .srt', () => {
+      expect(subManifest.srtPath).not.toBeNull()
+      expect(String(subManifest.srtPath)).toMatch(/\.srt$/)
+    })
+
+    it('fichier .srt présent sur disque, taille > 0', async () => {
+      const s = await stat(String(subManifest.srtPath))
+      expect(s.size).toBeGreaterThan(0)
+    })
+
+    it('subtitleSource est whisper ou proportional', () => {
+      expect(['whisper', 'proportional']).toContain(subManifest.subtitleSource)
+    })
   })
 
   // ─── STT optionnel ────────────────────────────────────────────────────────

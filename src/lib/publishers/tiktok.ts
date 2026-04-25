@@ -180,6 +180,12 @@ export type PublishResult = {
   hashtags: string[]
   mediaMode: string
   mediaSizeBytes?: number
+  /** C1.3 — Nombre de relances après le premier essai */
+  retryCount?: number
+}
+
+function resolvePublishResultFinalDir(runId: string, finalDir?: string): string {
+  return finalDir ?? join(process.cwd(), 'storage', 'runs', runId, 'final')
 }
 
 function getTikTokProfileUrl(): string | undefined {
@@ -439,11 +445,15 @@ export async function publishToTikTok(opts: {
 /**
  * Persiste le résultat de publication dans storage/runs/{runId}/final/publish-result.json.
  */
-export async function savePublishResult(runId: string, result: PublishResult): Promise<void> {
-  const finalDir = join(process.cwd(), 'storage', 'runs', runId, 'final')
-  await mkdir(finalDir, { recursive: true })
+export async function savePublishResult(
+  runId: string,
+  result: PublishResult,
+  finalDir?: string,
+): Promise<void> {
+  const resolvedFinalDir = resolvePublishResultFinalDir(runId, finalDir)
+  await mkdir(resolvedFinalDir, { recursive: true })
   await writeFile(
-    join(finalDir, 'publish-result.json'),
+    join(resolvedFinalDir, 'publish-result.json'),
     JSON.stringify(result, null, 2),
   )
 }
@@ -451,10 +461,13 @@ export async function savePublishResult(runId: string, result: PublishResult): P
 /**
  * Lit le publish-result.json existant, ou null si absent.
  */
-export async function readPublishResult(runId: string): Promise<PublishResult | null> {
+export async function readPublishResult(
+  runId: string,
+  finalDir?: string,
+): Promise<PublishResult | null> {
   try {
     const raw = await readFile(
-      join(process.cwd(), 'storage', 'runs', runId, 'final', 'publish-result.json'),
+      join(resolvePublishResultFinalDir(runId, finalDir), 'publish-result.json'),
       'utf-8',
     )
     return JSON.parse(raw) as PublishResult

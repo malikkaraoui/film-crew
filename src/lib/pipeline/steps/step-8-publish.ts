@@ -3,6 +3,7 @@ import { isAbsolute, join } from 'path'
 import { logger } from '@/lib/logger'
 import { savePublishResult } from '@/lib/publishers/tiktok'
 import { publishToPlatform, upsertPublishManifest } from '@/lib/publishers/factory'
+import { buildPublishPackage, savePublishPackage } from '@/lib/publishers/publish-package'
 import type { PipelineStep, StepContext, StepResult } from '../types'
 
 type PreviewManifest = {
@@ -11,6 +12,13 @@ type PreviewManifest = {
   mediaType: string | null
   readyForAssembly: boolean
   hasAudio: boolean
+}
+
+type AudioMasterManifestRef = {
+  masterFilePath: string
+  totalDurationS: number
+  scenes: { sceneIndex: number }[]
+  generatedAt: string
 }
 
 export const step8Publish: PipelineStep = {
@@ -35,21 +43,38 @@ export const step8Publish: PipelineStep = {
       logger.warn({ event: 'publish_no_media', runId: ctx.runId, mode })
     }
 
-    // Générer les métadonnées d'export
+    // Lire l'audio-master-manifest pour la traçabilité audio → publication
+    let audioManifest: AudioMasterManifestRef | null = null
+    try {
+      const raw = await readFile(join(ctx.storagePath, 'audio', 'audio-master-manifest.json'), 'utf-8')
+      audioManifest = JSON.parse(raw)
+    } catch {
+      logger.warn({ event: 'publish_no_audio_manifest', runId: ctx.runId })
+    }
+
+    // Lire structure.json pour titre et hashtags
     const structure = await readFile(join(ctx.storagePath, 'structure.json'), 'utf-8')
       .then((raw) => JSON.parse(raw))
-      .catch(() => ({ title: ctx.idea, scenes: [] }))
+      .catch(() => ({ title: ctx.idea, scenes: [], hashtags: undefined }))
 
     const title = structure.title || ctx.idea
-    const hashtags = ['#shorts', '#ai', '#filmcrew']
+    // Utiliser les hashtags de structure si disponibles, sinon defaults
+    const hashtags: string[] = Array.isArray(structure.hashtags) && structure.hashtags.length > 0
+      ? structure.hashtags
+      : ['#shorts', '#ai', '#filmcrew']
+    const description = `${title} — Généré par FILM-CREW`
 
+    // Écrire metadata.json enrichi
     const metadata = {
       title,
-      description: `${title} — Généré par FILM-CREW`,
+      description,
       hashtags,
       mode,
       mediaFile: playableFilePath
         ? `final/${mode === 'video_finale' ? 'video.mp4' : 'animatic.mp4'}`
+        : null,
+      audioSource: audioManifest
+        ? { masterPath: audioManifest.masterFilePath, totalDurationS: audioManifest.totalDurationS }
         : null,
       platforms: {
         tiktok: { format: '9:16', maxDuration: 180 },
@@ -63,6 +88,39 @@ export const step8Publish: PipelineStep = {
       join(finalDir, 'metadata.json'),
       JSON.stringify(metadata, null, 2),
     )
+
+    // C1.1 — Construire et persister le publish-package canonique
+    const pkg = buildPublishPackage({
+      runId: ctx.runId,
+      audio: audioManifest
+        ? {
+            masterPath: audioManifest.masterFilePath,
+            totalDurationS: audioManifest.totalDurationS,
+            sceneCount: audioManifest.scenes?.length ?? 0,
+            generatedAt: audioManifest.generatedAt,
+          }
+        : {
+            masterPath: '',
+            totalDurationS: 0,
+            sceneCount: 0,
+            generatedAt: new Date().toISOString(),
+          },
+      preview: {
+        mode,
+        playableFilePath,
+        hasAudio: previewManifest.hasAudio,
+      },
+      publication: { title, description, hashtags },
+    })
+
+    await savePublishPackage(ctx.runId, pkg, finalDir)
+
+    logger.info({
+      event: 'publish_package_written',
+      runId: ctx.runId,
+      audioLinked: !!audioManifest,
+      mode,
+    })
 
     // Tenter la publication TikTok (plateforme par défaut du pipeline)
     const videoPath = playableFilePath
@@ -80,8 +138,8 @@ export const step8Publish: PipelineStep = {
     })
 
     // Persister : publish-result.json (dernière pub) + publish-manifest.json (historique)
-    await savePublishResult(ctx.runId, publishResult)
-    await upsertPublishManifest(ctx.runId, publishResult, { title, hashtags })
+    await savePublishResult(ctx.runId, publishResult, finalDir)
+    await upsertPublishManifest(ctx.runId, publishResult, { title, hashtags }, ctx.storagePath)
 
     logger.info({
       event: 'publish_ready',
@@ -89,6 +147,7 @@ export const step8Publish: PipelineStep = {
       title,
       mode,
       hasPlayable,
+      audioLinked: !!audioManifest,
       tiktokStatus: publishResult.status,
       publishId: publishResult.publishId,
     })
@@ -101,6 +160,7 @@ export const step8Publish: PipelineStep = {
         mode,
         hasPlayable,
         mediaFile: metadata.mediaFile,
+        audioLinked: !!audioManifest,
         platforms: Object.keys(metadata.platforms),
         tiktokStatus: publishResult.status,
         publishId: publishResult.publishId,
