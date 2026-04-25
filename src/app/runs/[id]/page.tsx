@@ -49,6 +49,27 @@ type LlmCatalog = {
   localError: string | null
   cloudModels: string[]
   cloudAvailable: boolean
+  openRouterModels: string[]
+  openRouterAvailable: boolean
+}
+
+function getModelsForMode(catalog: LlmCatalog, mode: LlmMode): string[] {
+  if (mode === 'cloud') return catalog.cloudModels
+  if (mode === 'openrouter') return catalog.openRouterModels
+  return catalog.localModels
+}
+
+function buildModelOptions(models: string[], selectedModel: string): string[] {
+  const normalizedSelectedModel = selectedModel.trim()
+  if (!normalizedSelectedModel) return models
+  if (models.includes(normalizedSelectedModel)) return models
+  return [normalizedSelectedModel, ...models]
+}
+
+function getModelPlaceholder(mode: LlmMode): string {
+  if (mode === 'cloud') return 'deepseek-v3.1:671b-cloud'
+  if (mode === 'openrouter') return 'nvidia/nemotron-3-nano-30b-a3b:free'
+  return 'qwen2.5:7b'
 }
 
 const STEP_EXPECTATIONS: Record<number, { label: string; expected: string }> = {
@@ -290,7 +311,7 @@ export default function RunPage() {
   const [actionBusy, setActionBusy] = useState<'launch' | 'validate' | 'rewind' | 'kill' | 'export-meeting' | 'delete-meeting' | null>(null)
   const [traces, setTraces] = useState<DashboardAgentTrace[]>([])
   const [failoverLog, setFailoverLog] = useState<DashboardFailoverEntry[]>([])
-  const [catalog, setCatalog] = useState<LlmCatalog>({ localModels: [], localError: null, cloudModels: [], cloudAvailable: false })
+  const [catalog, setCatalog] = useState<LlmCatalog>({ localModels: [], localError: null, cloudModels: [], cloudAvailable: false, openRouterModels: [], openRouterAvailable: false })
   const [selectedLlmMode, setSelectedLlmMode] = useState<LlmMode>('local')
   const [selectedLlmModel, setSelectedLlmModel] = useState('')
   const [step6TranslatedPrompts, setStep6TranslatedPrompts] = useState<Record<number, string>>({})
@@ -359,7 +380,7 @@ export default function RunPage() {
       const json = await res.json()
       if (json.data) setCatalog(json.data)
     } catch {
-      setCatalog({ localModels: [], localError: 'Catalogue LLM indisponible', cloudModels: [], cloudAvailable: false })
+      setCatalog({ localModels: [], localError: 'Catalogue LLM indisponible', cloudModels: [], cloudAvailable: false, openRouterModels: [], openRouterAvailable: false })
     }
   }
 
@@ -638,21 +659,21 @@ export default function RunPage() {
 
     const fallbackMode: LlmMode = selectedStepLlmConfig?.mode ?? (selectedStep === 4 ? 'cloud' : 'local')
     const fallbackModel = selectedStepLlmConfig?.model
-      ?? (fallbackMode === 'cloud' ? catalog.cloudModels[0] ?? '' : catalog.localModels[0] ?? '')
+      ?? (getModelsForMode(catalog, fallbackMode)[0] ?? '')
 
     setSelectedLlmMode(fallbackMode)
     setSelectedLlmModel(fallbackModel)
-  }, [catalog.cloudModels, catalog.localModels, selectedStep, selectedStepLlmConfig?.mode, selectedStepLlmConfig?.model])
+  }, [catalog.cloudModels, catalog.localModels, catalog.openRouterModels, selectedStep, selectedStepLlmConfig?.mode, selectedStepLlmConfig?.model])
 
   useEffect(() => {
     if (!isLlmBackedStep(selectedStep)) return
 
-    const availableModels = selectedLlmMode === 'cloud' ? catalog.cloudModels : catalog.localModels
+    const availableModels = getModelsForMode(catalog, selectedLlmMode)
     if (availableModels.length === 0) return
-    if (availableModels.includes(selectedLlmModel)) return
+    if (selectedLlmModel.trim()) return
 
     setSelectedLlmModel(availableModels[0])
-  }, [catalog.cloudModels, catalog.localModels, selectedLlmMode, selectedLlmModel, selectedStep])
+  }, [catalog.cloudModels, catalog.localModels, catalog.openRouterModels, selectedLlmMode, selectedLlmModel, selectedStep])
 
   if (!run) return <p className="text-sm text-muted-foreground">Chargement...</p>
 
@@ -851,7 +872,7 @@ export default function RunPage() {
                   <div>
                     <div className="text-sm font-medium">LLM pour l’étape {selectedStep}</div>
                     <div className="text-xs text-muted-foreground">
-                      Cloud dispo : {catalog.cloudModels.join(' · ') || 'aucun catalogue cloud reçu'}
+                      Cloud dispo : {catalog.cloudModels.join(' · ') || 'aucun catalogue cloud reçu'}{catalog.openRouterModels.length > 0 ? ` · OpenRouter : ${catalog.openRouterModels.join(' · ')}` : ''}
                     </div>
                   </div>
 
@@ -867,12 +888,13 @@ export default function RunPage() {
                       >
                         <option value="local">Local</option>
                         <option value="cloud">Cloud</option>
+                        <option value="openrouter">OpenRouter</option>
                       </select>
                     </div>
 
                     <div>
                       <label htmlFor="step-llm-model" className="text-xs font-medium text-muted-foreground">Modèle</label>
-                      {(selectedLlmMode === 'cloud' ? catalog.cloudModels : catalog.localModels).length > 0 ? (
+                      {buildModelOptions(getModelsForMode(catalog, selectedLlmMode), selectedLlmModel).length > 0 ? (
                         <select
                           id="step-llm-model"
                           value={selectedLlmModel}
@@ -880,7 +902,7 @@ export default function RunPage() {
                           className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
                           disabled={run.status === 'running'}
                         >
-                          {(selectedLlmMode === 'cloud' ? catalog.cloudModels : catalog.localModels).map((model) => (
+                          {buildModelOptions(getModelsForMode(catalog, selectedLlmMode), selectedLlmModel).map((model) => (
                             <option key={model} value={model}>{model}</option>
                           ))}
                         </select>
@@ -889,7 +911,7 @@ export default function RunPage() {
                           id="step-llm-model"
                           value={selectedLlmModel}
                           onChange={(e) => setSelectedLlmModel(e.target.value)}
-                          placeholder={selectedLlmMode === 'cloud' ? 'deepseek-v3.1:671b-cloud' : 'qwen2.5:7b'}
+                          placeholder={getModelPlaceholder(selectedLlmMode)}
                           className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
                           disabled={run.status === 'running'}
                         />
@@ -900,6 +922,12 @@ export default function RunPage() {
                   {catalog.localError && selectedLlmMode === 'local' && (
                     <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                       {catalog.localError}
+                    </div>
+                  )}
+
+                  {!catalog.openRouterAvailable && selectedLlmMode === 'openrouter' && (
+                    <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      OpenRouter n&apos;est pas confirmé côté runtime. Vérifie `OPENROUTER_API_KEY`.
                     </div>
                   )}
                 </div>

@@ -5,7 +5,10 @@ import { logger } from '@/lib/logger'
 import { mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { buildIntentionPrefix } from '@/lib/intention/schema'
+import { getAllConfig } from '@/lib/db/queries/config'
+import { normalizeLlmModelForMode, normalizeLlmMode } from '@/lib/llm/target'
 import { writeProjectConfig } from '@/lib/runs/project-config'
+import { parseStepLlmDefaultsFromConfigEntries } from '@/lib/settings/step-llm-defaults'
 
 function parsePositiveInt(value: unknown, fallback: number): number {
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.round(value)
@@ -108,9 +111,29 @@ export async function POST(request: Request) {
     await mkdir(join(runPath, 'storyboard'), { recursive: true })
     await mkdir(join(runPath, 'final'), { recursive: true })
 
+    const configRows = await getAllConfig()
+    const stepLlmDefaults = parseStepLlmDefaultsFromConfigEntries(configRows)
+    const requestedMeetingLlmMode = typeof meetingLlmMode === 'string' ? normalizeLlmMode(meetingLlmMode) : null
+    const requestedMeetingLlmModel = typeof meetingLlmModel === 'string' && meetingLlmModel.trim()
+      ? meetingLlmModel.trim()
+      : null
+    const step2Default = stepLlmDefaults['2']
+    const finalMeetingLlmMode = requestedMeetingLlmMode ?? step2Default?.mode ?? 'local'
+    const finalMeetingLlmModel = normalizeLlmModelForMode(
+      finalMeetingLlmMode,
+      requestedMeetingLlmModel ?? step2Default?.model,
+    )
+
     const projectConfig = await writeProjectConfig(runPath, {
-      meetingLlmMode,
-      meetingLlmModel,
+      meetingLlmMode: finalMeetingLlmMode,
+      meetingLlmModel: finalMeetingLlmModel,
+      stepLlmConfigs: {
+        ...stepLlmDefaults,
+        '2': {
+          mode: finalMeetingLlmMode,
+          model: finalMeetingLlmModel,
+        },
+      },
       outputConfig,
       referenceImages: referenceUrls.length > 0 ? { urls: referenceUrls } : null,
     })

@@ -1,0 +1,126 @@
+{
+  "version": "1.0",
+  "generatedAt": "2026-04-24T00:00:00.000Z",
+  "assets": [
+    {
+      "id": "impact-001",
+      "category": "impacts",
+      "filename": "impact-drum-001.wav",
+      "description": "Impact percussif sourd",
+      "durationS": 0.6,
+      "tags": ["impact", "percussif", "sourd"]
+    },
+    {
+      "id": "impact-002",
+      "category": "impacts",
+      "filename": "impact-bass-001.wav",
+      "description": "Impact basse fréquence, grave",
+      "durationS": 1.2,
+      "tags": ["impact", "basse", "grave"]
+    },
+    {
+      "id": "impact-003",
+      "category": "impacts",
+      "filename": "impact-hit-001.wav",
+      "description": "Impact fort, cinématique",
+      "durationS": 0.9,
+      "tags": ["impact", "fort", "cinématique"]
+    },
+    {
+      "id": "transition-001",
+      "category": "transitions",
+      "filename": "swoosh-001.wav",
+      "description": "Swoosh aérien, rapide",
+      "durationS": 0.4,
+      "tags": ["swoosh", "aérien", "rapide"]
+    },
+    {
+      "id": "transition-002",
+      "category": "transitions",
+      "filename": "whoosh-001.wav",
+      "description": "Whoosh grave, lent",
+      "durationS": 0.8,
+      "tags": ["whoosh", "grave", "lent"]
+    },
+    {
+      "id": "transition-003",
+      "category": "transitions",
+      "filename": "riser-001.wav",
+      "description": "Montée de tension progressive",
+      "durationS": 2.0,
+      "tags": ["riser", "tension", "montée"]
+    },
+    {
+      "id": "nature-001",
+      "category": "nature",
+      "filename": "rain-light-001.wav",
+      "description": "Pluie légère, continue",
+      "durationS": 5.0,
+      "tags": ["pluie", "nature", "ambiance"]
+    },
+    {
+      "id": "nature-002",
+      "category": "nature",
+      "filename": "wind-001.wav",
+      "description": "Vent doux, extérieur",
+      "durationS": 4.0,
+      "tags": ["vent", "nature", "ambiance"]
+    },
+    {
+      "id": "nature-003",
+      "category": "nature",
+      "filename": "forest-birds-001.wav",
+      "description": "Forêt, chant d'oiseaux",
+      "durationS": 6.0,
+      "tags": ["forêt", "oiseaux", "nature", "ambiance"]
+    },
+    {
+      "id": "urban-001",
+      "category": "urban",
+      "filename": "traffic-distant-001.wav",
+      "description": "Trafic urbain distant",
+      "durationS": 5.0,
+      "tags": ["urbain", "trafic", "ambiance"]
+    },
+    {
+      "id": "urban-002",
+      "category": "urban",
+      "filename": "crowd-murmur-001.wav",
+      "description": "Murmure de foule intérieure",
+      "durationS": 4.0,
+      "tags": ["urbain", "foule", "murmure", "ambiance"]
+    },
+    {
+      "id": "urban-003",
+      "category": "urban",
+      "filename": "door-close-001.wav",
+      "description": "Porte qui se ferme, intérieur",
+      "durationS": 0.5,
+      "tags": ["porte", "urbain", "intérieur"]
+    },
+    {
+      "id": "ui-001",
+      "category": "ui",
+      "filename": "notification-soft-001.wav",
+      "description": "Notification douce",
+      "durationS": 0.3,
+      "tags": ["ui", "notification", "doux"]
+    },
+    {
+      "id": "ui-002",
+      "category": "ui",
+      "filename": "click-001.wav",
+      "description": "Clic sec, interface",
+      "durationS": 0.1,
+      "tags": ["ui", "clic", "sec"]
+    },
+    {
+      "id": "ui-003",
+      "category": "ui",
+      "filename": "success-001.wav",
+      "description": "Validation succès",
+      "durationS": 0.5,
+      "tags": ["ui", "succès", "validation"]
+    }
+  ]
+}

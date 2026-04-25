@@ -24,6 +24,8 @@ export type StyleTemplate = {
     bold?: boolean
     marginBottom?: number
   }
+  /** Active la génération SRT pour ce run — surcharge ENABLE_SUBTITLES si défini */
+  enableSubtitles?: boolean
 }
 
 const TEMPLATES_DIR = join(process.cwd(), 'templates')

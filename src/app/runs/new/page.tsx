@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { INTENTION_BLOCS, getVisibleQuestions } from '@/lib/intention/schema'
+import { parseStepLlmDefaultsFromConfigEntries } from '@/lib/settings/step-llm-defaults'
 import type { Chain } from '@/types/chain'
 import type { MeetingLlmMode } from '@/types/run'
 
@@ -29,10 +30,23 @@ type UploadedReferenceImage = {
   fileName: string
 }
 
+type ConfigRow = {
+  key: string
+  value: string
+}
+
 const DEFAULT_LOCAL_MODEL = 'mistral:latest'
 const DEFAULT_CLOUD_MODEL = 'deepseek-v3.1:671b-cloud'
+const DEFAULT_OPENROUTER_MODEL = 'nvidia/nemotron-3-nano-30b-a3b:free'
 const DEFAULT_FULL_VIDEO_DURATION_S = 60
 const LOCKED_SCENE_DURATION_S = 10
+
+function buildModelOptions(models: string[], selectedModel: string): string[] {
+  const normalizedSelectedModel = selectedModel.trim()
+  if (!normalizedSelectedModel) return models
+  if (models.includes(normalizedSelectedModel)) return models
+  return [normalizedSelectedModel, ...models]
+}
 
 function NewRunForm() {
   const router = useRouter()
@@ -49,9 +63,11 @@ function NewRunForm() {
   const [meetingMode, setMeetingMode] = useState<MeetingLlmMode>('local')
   const [localModels, setLocalModels] = useState<string[]>([])
   const [cloudModels, setCloudModels] = useState<string[]>([])
+  const [openRouterModels, setOpenRouterModels] = useState<string[]>([])
   const [localModelsError, setLocalModelsError] = useState('')
   const [meetingLocalModel, setMeetingLocalModel] = useState(DEFAULT_LOCAL_MODEL)
   const [meetingCloudModel, setMeetingCloudModel] = useState(DEFAULT_CLOUD_MODEL)
+  const [meetingOpenRouterModel, setMeetingOpenRouterModel] = useState(DEFAULT_OPENROUTER_MODEL)
   const [outputVideoCount, setOutputVideoCount] = useState(1)
   const [fullVideoDurationS, setFullVideoDurationS] = useState(DEFAULT_FULL_VIDEO_DURATION_S)
   const [referenceImageUrl1, setReferenceImageUrl1] = useState('')
@@ -66,52 +82,78 @@ function NewRunForm() {
   const [openBloc, setOpenBloc] = useState<string | null>(null)
 
   useEffect(() => {
-    fetch('/api/chains')
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.data) {
-          setChains(json.data)
-          const preselect = searchParams?.get('chainId')
-          const match = preselect ? (json.data as Chain[]).find((c) => c.id === preselect) : null
-          if (match) {
-            setChainId(match.id)
-          } else if ((json.data as Chain[]).length > 0) {
-            setChainId((json.data as Chain[])[0].id)
-          }
+    async function load() {
+      const [chainsRes, estimateRes, templatesRes, llmRes, configRes] = await Promise.all([
+        fetch('/api/chains'),
+        fetch('/api/runs/estimate'),
+        fetch('/api/templates'),
+        fetch('/api/llm/models'),
+        fetch('/api/config', { cache: 'no-store' }),
+      ])
+
+      const [chainsJson, estimateJson, templatesJson, llmJson, configJson] = await Promise.all([
+        chainsRes.json(),
+        estimateRes.json(),
+        templatesRes.json(),
+        llmRes.json(),
+        configRes.json(),
+      ])
+
+      if (chainsJson.data) {
+        setChains(chainsJson.data)
+        const preselect = searchParams?.get('chainId')
+        const match = preselect ? (chainsJson.data as Chain[]).find((c) => c.id === preselect) : null
+        if (match) {
+          setChainId(match.id)
+        } else if ((chainsJson.data as Chain[]).length > 0) {
+          setChainId((chainsJson.data as Chain[])[0].id)
         }
-      })
+      }
 
-    fetch('/api/runs/estimate')
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.data) setEstimate(json.data)
-      })
-      .finally(() => setLoadingEstimate(false))
+      if (estimateJson.data) setEstimate(estimateJson.data)
+      if (templatesJson.data) setTemplates(templatesJson.data)
 
-    fetch('/api/templates')
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.data) setTemplates(json.data)
-      })
+      const models = Array.isArray(llmJson.data?.localModels) ? llmJson.data.localModels as string[] : []
+      const cloud = Array.isArray(llmJson.data?.cloudModels) ? llmJson.data.cloudModels as string[] : []
+      const openRouter = Array.isArray(llmJson.data?.openRouterModels) ? llmJson.data.openRouterModels as string[] : []
+      setLocalModels(models)
+      setCloudModels(cloud)
+      setOpenRouterModels(openRouter)
+      if (llmJson.data?.localError) setLocalModelsError(llmJson.data.localError)
 
-    fetch('/api/llm/models')
-      .then((r) => r.json())
-      .then((json) => {
-        const models = Array.isArray(json.data?.localModels) ? json.data.localModels as string[] : []
-        const cloud = Array.isArray(json.data?.cloudModels) ? json.data.cloudModels as string[] : []
-        setLocalModels(models)
-        setCloudModels(cloud)
+      const configRows = Array.isArray(configJson.data) ? configJson.data as ConfigRow[] : []
+      const stepDefaults = parseStepLlmDefaultsFromConfigEntries(configRows)
+      const step2Default = stepDefaults['2']
+
+      if (step2Default) {
+        setMeetingMode(step2Default.mode)
+        setMeetingLocalModel(step2Default.mode === 'local'
+          ? step2Default.model
+          : (models.includes(step2Default.model) ? step2Default.model : (models[0] ?? step2Default.model)))
+        setMeetingCloudModel(step2Default.mode === 'cloud'
+          ? step2Default.model
+          : (cloud.includes(step2Default.model) ? step2Default.model : (cloud[0] ?? step2Default.model)))
+        setMeetingOpenRouterModel(step2Default.mode === 'openrouter'
+          ? step2Default.model
+          : (openRouter.includes(step2Default.model) ? step2Default.model : (openRouter[0] ?? step2Default.model)))
+      } else {
         if (models.length > 0) {
           setMeetingLocalModel((current) => models.includes(current) ? current : models[0])
         }
         if (cloud.length > 0) {
           setMeetingCloudModel((current) => cloud.includes(current) ? current : cloud[0])
         }
-        if (json.data?.localError) setLocalModelsError(json.data.localError)
-      })
+        if (openRouter.length > 0) {
+          setMeetingOpenRouterModel((current) => openRouter.includes(current) ? current : openRouter[0])
+        }
+      }
+    }
+
+    void load()
       .catch(() => {
         setLocalModelsError('Impossible de lister les modèles Ollama locaux')
       })
+      .finally(() => setLoadingEstimate(false))
   }, [searchParams])
 
   const handleAnswer = useCallback((questionId: string, value: string) => {
@@ -122,7 +164,12 @@ function NewRunForm() {
   const visibleQuestions = getVisibleQuestions(answers)
   const selectedMeetingModel = meetingMode === 'cloud'
     ? meetingCloudModel.trim()
-    : meetingLocalModel.trim()
+    : meetingMode === 'openrouter'
+      ? meetingOpenRouterModel.trim()
+      : meetingLocalModel.trim()
+  const meetingLocalModelOptions = buildModelOptions(localModels, meetingLocalModel)
+  const meetingCloudModelOptions = buildModelOptions(cloudModels, meetingCloudModel)
+  const meetingOpenRouterModelOptions = buildModelOptions(openRouterModels, meetingOpenRouterModel)
   const derivedSceneCount = Math.max(1, Math.ceil(fullVideoDurationS / LOCKED_SCENE_DURATION_S))
   const durationMismatch = fullVideoDurationS % LOCKED_SCENE_DURATION_S !== 0
   const referenceImageUrls = [
@@ -392,20 +439,21 @@ function NewRunForm() {
                 >
                   <option value="local">Local via Ollama (sur ce Mac)</option>
                   <option value="cloud">Cloud via Ollama</option>
+                  <option value="openrouter">OpenRouter (texte)</option>
                 </select>
               </div>
 
               {meetingMode === 'local' ? (
                 <div>
                   <Label htmlFor="meeting-local-model">Modèle local</Label>
-                  {localModels.length > 0 ? (
+                  {meetingLocalModelOptions.length > 0 ? (
                     <select
                       id="meeting-local-model"
                       value={meetingLocalModel}
                       onChange={(e) => setMeetingLocalModel(e.target.value)}
                       className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                     >
-                      {localModels.map((model) => (
+                      {meetingLocalModelOptions.map((model) => (
                         <option key={model} value={model}>{model}</option>
                       ))}
                     </select>
@@ -423,17 +471,17 @@ function NewRunForm() {
                     </p>
                   )}
                 </div>
-              ) : (
+              ) : meetingMode === 'cloud' ? (
                 <div>
                   <Label htmlFor="meeting-cloud-model">Modèle cloud</Label>
-                  {cloudModels.length > 0 ? (
+                  {meetingCloudModelOptions.length > 0 ? (
                     <select
                       id="meeting-cloud-model"
                       value={meetingCloudModel}
                       onChange={(e) => setMeetingCloudModel(e.target.value)}
                       className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                     >
-                      {cloudModels.map((model) => (
+                      {meetingCloudModelOptions.map((model) => (
                         <option key={model} value={model}>{model}</option>
                       ))}
                     </select>
@@ -450,6 +498,32 @@ function NewRunForm() {
                       Cloud dispo : {cloudModels.join(' · ')}
                     </p>
                   )}
+                </div>
+              ) : (
+                <div>
+                  <Label htmlFor="meeting-openrouter-model">Modèle OpenRouter</Label>
+                  {meetingOpenRouterModelOptions.length > 0 ? (
+                    <select
+                      id="meeting-openrouter-model"
+                      value={meetingOpenRouterModel}
+                      onChange={(e) => setMeetingOpenRouterModel(e.target.value)}
+                      className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
+                    >
+                      {meetingOpenRouterModelOptions.map((model) => (
+                        <option key={model} value={model}>{model}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <Input
+                      id="meeting-openrouter-model"
+                      value={meetingOpenRouterModel}
+                      onChange={(e) => setMeetingOpenRouterModel(e.target.value)}
+                      placeholder="nvidia/nemotron-3-nano-30b-a3b:free"
+                    />
+                  )}
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Modèles texte d’essai via OpenRouter pour la réunion de l’étape 2.
+                  </p>
                 </div>
               )}
 

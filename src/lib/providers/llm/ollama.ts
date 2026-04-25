@@ -23,6 +23,14 @@ function buildOllamaApiUrl(host: string, path: string): string {
   return normalized.endsWith('/api') ? `${normalized}${path}` : `${normalized}/api${path}`
 }
 
+function isOpenRouterHost(host: string): boolean {
+  return /openrouter\.ai/i.test(host)
+}
+
+function buildOpenAiChatCompletionsUrl(host: string): string {
+  return `${normalizeOllamaHost(host)}/chat/completions`
+}
+
 export const ollamaProvider: LLMProvider = {
   name: 'ollama',
   type: 'llm',
@@ -33,6 +41,14 @@ export const ollamaProvider: LLMProvider = {
         status: 'busy',
         lastCheck: new Date().toISOString(),
         details: getBusyDetails(),
+      }
+    }
+
+    if (process.env.OPENROUTER_API_KEY?.trim()) {
+      return {
+        status: 'free',
+        lastCheck: new Date().toISOString(),
+        details: 'OpenRouter configuré',
       }
     }
 
@@ -56,22 +72,31 @@ export const ollamaProvider: LLMProvider = {
     const host = opts.host || DEFAULT_OLLAMA_URL
     const timeoutMs = opts.timeoutMs ?? DEFAULT_OLLAMA_CHAT_TIMEOUT_MS
     const start = Date.now()
-    const requestBody = {
-      model,
-      messages,
-      stream: false,
-      think: false,
-      options: {
-        temperature: opts.temperature ?? 0.7,
-        num_predict: opts.maxTokens ?? 2048,
-      },
-    }
+    const openRouterMode = isOpenRouterHost(host)
+    const requestBody = openRouterMode
+      ? {
+          model,
+          messages,
+          temperature: opts.temperature ?? 0.7,
+          max_tokens: opts.maxTokens ?? 2048,
+          stream: false,
+        }
+      : {
+          model,
+          messages,
+          stream: false,
+          think: false,
+          options: {
+            temperature: opts.temperature ?? 0.7,
+            num_predict: opts.maxTokens ?? 2048,
+          },
+        }
 
     runtimeState.activeRequests += 1
     runtimeState.activeModels.add(model)
 
     try {
-      const res = await fetch(buildOllamaApiUrl(host, '/chat'), {
+      const res = await fetch(openRouterMode ? buildOpenAiChatCompletionsUrl(host) : buildOllamaApiUrl(host, '/chat'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -88,25 +113,29 @@ export const ollamaProvider: LLMProvider = {
 
       const data = await res.json()
       const latencyMs = Date.now() - start
-      const content = data.message?.content ?? data.response ?? ''
-      const thinking = data.message?.thinking ?? data.thinking ?? ''
+      const content = openRouterMode
+        ? data.choices?.[0]?.message?.content ?? ''
+        : data.message?.content ?? data.response ?? ''
+      const thinking = openRouterMode ? '' : data.message?.thinking ?? data.thinking ?? ''
 
       if (!content.trim()) {
         const details = [
           `model=${model}`,
-          `tokens=${data.eval_count ?? 0}`,
-          `prompt_tokens=${data.prompt_eval_count ?? 0}`,
-          `done_reason=${data.done_reason ?? 'unknown'}`,
+          `tokens=${openRouterMode ? (data.usage?.total_tokens ?? 0) : (data.eval_count ?? 0)}`,
+          `prompt_tokens=${openRouterMode ? (data.usage?.prompt_tokens ?? 0) : (data.prompt_eval_count ?? 0)}`,
+          `done_reason=${openRouterMode ? (data.choices?.[0]?.finish_reason ?? 'unknown') : (data.done_reason ?? 'unknown')}`,
           thinking ? 'thinking_only=true' : null,
         ].filter(Boolean).join(', ')
 
-        throw new Error(`Ollama réponse vide (${details})`)
+        throw new Error(openRouterMode ? `OpenRouter réponse vide (${details})` : `Ollama réponse vide (${details})`)
       }
 
       return {
         content,
         model,
-        tokens: (data.eval_count ?? 0) + (data.prompt_eval_count ?? 0),
+        tokens: openRouterMode
+          ? (data.usage?.total_tokens ?? 0)
+          : (data.eval_count ?? 0) + (data.prompt_eval_count ?? 0),
         latencyMs,
         costEur: 0,
       }

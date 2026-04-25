@@ -6,7 +6,8 @@ import type { PipelineStep, StepContext, StepResult } from '../types'
 import { detectEncoder, encoderArgs, probeMediaDuration, checkLibass } from '../ffmpeg-media'
 import { buildFilterGraph, type PreviewPipelineConfig } from '../ffmpeg-graph'
 import { sanitizeTransitionConfig, DEFAULT_TRANSITION, DEFAULT_TRANSITION_DURATION, type XfadeTransition, type TransitionConfig } from '../ffmpeg-transitions'
-import { generateSRT, type SubtitleStyle } from '../subtitles'
+import { type SubtitleStyle } from '../subtitles'
+import { generateSubtitles } from '../subtitle-generator'
 
 // Taxonomie fixe (registre risques R6) :
 //   video_finale  = clips vidéo réels assemblés
@@ -204,7 +205,7 @@ async function assembleAnimatic(
 
 export const step7Preview: PipelineStep = {
   name: 'Preview',
-  stepNumber: 8,
+  stepNumber: 9,
 
   async execute(ctx: StepContext): Promise<StepResult> {
     // ─── Lecture des manifests ────────────────────────────────────────────────
@@ -262,32 +263,21 @@ export const step7Preview: PipelineStep = {
     }
 
     // Sous-titres config
-    const enableSubtitles = process.env.ENABLE_SUBTITLES === 'true'
+    const enableSubtitles = ctx.template?.enableSubtitles ?? (process.env.ENABLE_SUBTITLES === 'true')
     const subtitleStyle: SubtitleStyle = ctx.template?.previewSubtitleStyle ?? {}
 
     // ─── Génération SRT si activé ────────────────────────────────────────────
     let srtPath: string | null = null
+    let subtitleSource: 'whisper' | 'proportional' | null = null
     if (enableSubtitles && hasAudio) {
-      try {
-        const structure = JSON.parse(
-          await readFile(join(ctx.storagePath, 'structure.json'), 'utf-8'),
-        )
-        const sceneDialogues = (structure.scenes ?? [])
-          .map((s: { dialogue?: string }, i: number) => ({
-            sceneIndex: i,
-            dialogue: s.dialogue ?? '',
-          }))
-          .filter((s: { dialogue: string }) => s.dialogue.trim().length > 0)
-
-        if (sceneDialogues.length > 0) {
-          const audioDuration = await probeMediaDuration(audioPath!, 60)
-          const finalDir = join(ctx.storagePath, 'final')
-          srtPath = await generateSRT(sceneDialogues, audioDuration, finalDir)
-          logger.info({ event: 'srt_generated', runId: ctx.runId, path: srtPath })
-        }
-      } catch (e) {
-        logger.warn({ event: 'srt_generation_failed', runId: ctx.runId, error: (e as Error).message })
-      }
+      const srtResult = await generateSubtitles({
+        audioPath: audioPath!,
+        storagePath: ctx.storagePath,
+        outputDir: finalDir,
+        runId: ctx.runId,
+      })
+      srtPath = srtResult?.srtPath ?? null
+      subtitleSource = srtResult?.source ?? null
     }
 
     // ─── Concat.txt pour clips (conservé pour compatibilité + fallback) ──────
@@ -368,6 +358,7 @@ export const step7Preview: PipelineStep = {
       musicPath: hasMusicBg ? musicPath : null,
       srtPath,
       subtitlesEnabled,
+      subtitleSource,
       encoderUsed,
       transitionsEnabled,
       createdAt: new Date().toISOString(),

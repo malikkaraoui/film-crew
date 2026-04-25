@@ -15,6 +15,33 @@ type LlmCatalog = {
   localError: string | null
   cloudModels: string[]
   cloudAvailable: boolean
+  openRouterModels: string[]
+  openRouterAvailable: boolean
+}
+
+function getModelsForMode(catalog: LlmCatalog, mode: LlmMode): string[] {
+  if (mode === 'cloud') return catalog.cloudModels
+  if (mode === 'openrouter') return catalog.openRouterModels
+  return catalog.localModels
+}
+
+function buildModelOptions(models: string[], selectedModel: string): string[] {
+  const normalizedSelectedModel = selectedModel.trim()
+  if (!normalizedSelectedModel) return models
+  if (models.includes(normalizedSelectedModel)) return models
+  return [normalizedSelectedModel, ...models]
+}
+
+function getModeLabel(mode: LlmMode): string {
+  if (mode === 'cloud') return 'Cloud'
+  if (mode === 'openrouter') return 'OpenRouter'
+  return 'Local'
+}
+
+function getModelPlaceholder(mode: LlmMode): string {
+  if (mode === 'cloud') return 'deepseek-v3.1:671b-cloud'
+  if (mode === 'openrouter') return 'nvidia/nemotron-3-nano-30b-a3b:free'
+  return 'qwen2.5:7b'
 }
 
 type TraceEntry = {
@@ -56,6 +83,8 @@ export default function StudioPage() {
     localError: null,
     cloudModels: [],
     cloudAvailable: false,
+    openRouterModels: [],
+    openRouterAvailable: false,
   })
   const [selectedMeetingMode, setSelectedMeetingMode] = useState<LlmMode>('local')
   const [selectedMeetingModel, setSelectedMeetingModel] = useState('')
@@ -125,39 +154,35 @@ export default function StudioPage() {
 
   useEffect(() => {
     const mode = step2Config?.mode ?? 'local'
-    const fallbackModel = mode === 'cloud'
-      ? (catalog.cloudModels[0] ?? detectedCurrentModel)
-      : (catalog.localModels[0] ?? detectedCurrentModel)
+    const fallbackModel = getModelsForMode(catalog, mode)[0] ?? detectedCurrentModel
 
     setSelectedMeetingMode(mode)
     setSelectedMeetingModel(step2Config?.model ?? fallbackModel ?? '')
-  }, [catalog.cloudModels, catalog.localModels, detectedCurrentModel, step2Config?.mode, step2Config?.model])
+  }, [catalog.cloudModels, catalog.localModels, catalog.openRouterModels, detectedCurrentModel, step2Config?.mode, step2Config?.model])
 
   useEffect(() => {
-    const models = selectedMeetingMode === 'cloud' ? catalog.cloudModels : catalog.localModels
+    const models = getModelsForMode(catalog, selectedMeetingMode)
     if (models.length === 0) return
-    if (models.includes(selectedMeetingModel)) return
+    if (selectedMeetingModel.trim()) return
 
     setSelectedMeetingModel(models[0])
-  }, [catalog.cloudModels, catalog.localModels, selectedMeetingMode, selectedMeetingModel])
+  }, [catalog.cloudModels, catalog.localModels, catalog.openRouterModels, selectedMeetingMode, selectedMeetingModel])
 
   useEffect(() => {
     const mode = step3Config?.mode ?? 'local'
-    const fallbackModel = mode === 'cloud'
-      ? catalog.cloudModels[0] ?? ''
-      : catalog.localModels[0] ?? ''
+    const fallbackModel = getModelsForMode(catalog, mode)[0] ?? ''
 
     setNextStepMode(mode)
     setNextStepModel(step3Config?.model ?? fallbackModel)
-  }, [catalog.cloudModels, catalog.localModels, step3Config?.mode, step3Config?.model])
+  }, [catalog.cloudModels, catalog.localModels, catalog.openRouterModels, step3Config?.mode, step3Config?.model])
 
   useEffect(() => {
-    const models = nextStepMode === 'cloud' ? catalog.cloudModels : catalog.localModels
+    const models = getModelsForMode(catalog, nextStepMode)
     if (models.length === 0) return
-    if (models.includes(nextStepModel)) return
+    if (nextStepModel.trim()) return
 
     setNextStepModel(models[0])
-  }, [catalog.cloudModels, catalog.localModels, nextStepMode, nextStepModel])
+  }, [catalog.cloudModels, catalog.localModels, catalog.openRouterModels, nextStepMode, nextStepModel])
 
   async function loadRun() {
     try {
@@ -191,7 +216,7 @@ export default function StudioPage() {
         setCatalog(json.data)
       }
     } catch {
-      setCatalog({ localModels: [], localError: 'Catalogue LLM indisponible', cloudModels: [], cloudAvailable: false })
+      setCatalog({ localModels: [], localError: 'Catalogue LLM indisponible', cloudModels: [], cloudAvailable: false, openRouterModels: [], openRouterAvailable: false })
     }
   }
 
@@ -361,6 +386,7 @@ export default function StudioPage() {
       ? 'Lancer l’étape 3'
       : 'Retour au cockpit'
   const cloudModelsLabel = catalog.cloudModels.join(' · ')
+  const openRouterModelsLabel = catalog.openRouterModels.join(' · ')
 
   function renderModelPicker(options: {
     mode: LlmMode
@@ -369,8 +395,8 @@ export default function StudioPage() {
     onModelChange: (model: string) => void
     prefix: string
   }) {
-    const models = options.mode === 'cloud' ? catalog.cloudModels : catalog.localModels
-    const placeholder = options.mode === 'cloud' ? 'deepseek-v3.1:671b-cloud' : 'qwen2.5:7b'
+    const models = buildModelOptions(getModelsForMode(catalog, options.mode), options.model)
+    const placeholder = getModelPlaceholder(options.mode)
 
     return (
       <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)]">
@@ -384,6 +410,7 @@ export default function StudioPage() {
           >
             <option value="local">Local</option>
             <option value="cloud">Cloud</option>
+            <option value="openrouter">OpenRouter</option>
           </select>
         </div>
 
@@ -431,7 +458,7 @@ export default function StudioPage() {
           <div>
             <div className="text-sm font-medium">LLM de la réunion</div>
             <div className="text-xs text-muted-foreground">
-              Cloud dispo : {cloudModelsLabel || 'aucun catalogue cloud reçu'}
+                Cloud dispo : {cloudModelsLabel || 'aucun catalogue cloud reçu'}{openRouterModelsLabel ? ` · OpenRouter : ${openRouterModelsLabel}` : ''}
             </div>
           </div>
 
@@ -562,7 +589,7 @@ export default function StudioPage() {
 
             <div className="mt-3 space-y-3">
               <div className="text-xs text-muted-foreground">
-                Modèle actuel : {detectedCurrentModel ? `${selectedMeetingMode} · ${detectedCurrentModel}` : 'non renseigné'}
+                Modèle actuel : {detectedCurrentModel ? `${getModeLabel(selectedMeetingMode)} · ${detectedCurrentModel}` : 'non renseigné'}
               </div>
 
               {renderModelPicker({
@@ -582,6 +609,12 @@ export default function StudioPage() {
           {!catalog.cloudAvailable && nextStepMode === 'cloud' && (
             <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
               Le cloud LLM n&apos;est pas confirmé côté runtime. Vérifie la config Ollama cloud si besoin.
+            </div>
+          )}
+
+          {!catalog.openRouterAvailable && (selectedMeetingMode === 'openrouter' || nextStepMode === 'openrouter') && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              OpenRouter n&apos;est pas confirmé côté runtime. Vérifie `OPENROUTER_API_KEY` avant lancement.
             </div>
           )}
 

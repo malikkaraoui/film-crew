@@ -5,16 +5,17 @@ import { deleteClipsForRun, resetRunStepsFromStep, updateRunStatus } from '@/lib
 
 const STEP_ARTIFACTS: Record<number, string[]> = {
   2: ['brief.json'],
-  3: ['structure.json', 'structure-raw.txt', 'director-plan.json'],
+  3: ['structure.json', 'structure-raw.txt', 'director-plan.json', 'dialogue_script.json'],
   4: ['storyboard-blueprint.json', 'storyboard-blueprint-raw.txt'],
   5: ['storyboard', 'failover-log.json'],
-  6: ['prompts.json', 'prompt-manifest.json'],
-  7: ['generation-manifest.json', 'clips', 'audio', 'subtitles'],
-  8: ['preview-manifest.json', 'final'],
-  9: ['publish-manifest.json'],
+  6: ['audio/audio-master-manifest.json', 'audio/master.wav', 'audio/scenes'],
+  7: ['prompts.json', 'prompt-manifest.json'],
+  8: ['generation-manifest.json', 'clips', 'tts', 'tts_manifest.json', 'subtitles'],
+  9: ['preview-manifest.json', 'final'],
+  10: ['publish-manifest.json'],
 }
 
-const CORE_DIRECTORIES = ['clips', 'audio', 'subtitles', 'storyboard', 'final']
+const CORE_DIRECTORIES = ['clips', 'subtitles', 'storyboard', 'final']
 
 async function cleanupArtifactsFromStep(storagePath: string, stepNumber: number): Promise<void> {
   for (const [rawStep, relativePaths] of Object.entries(STEP_ARTIFACTS)) {
@@ -43,7 +44,7 @@ export async function resetRunFromStep(params: {
     await deleteAgentTraces(runId)
   }
 
-  if (stepNumber <= 7) {
+  if (stepNumber <= 8) {
     await deleteClipsForRun(runId)
   }
 

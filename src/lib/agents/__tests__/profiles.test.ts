@@ -2,12 +2,11 @@ import { describe, it, expect } from 'vitest'
 import { AGENT_PROFILES, MEETING_ORDER, getProfile } from '../profiles'
 
 describe('Agent Profiles', () => {
-  it('définit 6 agents', () => {
-    expect(Object.keys(AGENT_PROFILES)).toHaveLength(6)
+  it('définit 10 agents', () => {
+    expect(Object.keys(AGENT_PROFILES)).toHaveLength(10)
   })
 
-  it('respecte la parité 3H/3F', () => {
-    // Mia (F), Lenny (H), Laura (F), Nael (H), Emilie (F), Nico (H)
+  it('inclut les 4 nouveaux rôles audio-first', () => {
     const names = Object.values(AGENT_PROFILES).map((p) => p.displayName)
     expect(names).toContain('Mia')
     expect(names).toContain('Lenny')
@@ -15,6 +14,10 @@ describe('Agent Profiles', () => {
     expect(names).toContain('Nael')
     expect(names).toContain('Emilie')
     expect(names).toContain('Nico')
+    expect(names).toContain('Sami')
+    expect(names).toContain('Jade')
+    expect(names).toContain('Rémi')
+    expect(names).toContain('Théo')
   })
 
   it('chaque agent a un system prompt non vide', () => {
@@ -31,7 +34,7 @@ describe('Agent Profiles', () => {
 
   it('chaque agent a une couleur distincte', () => {
     const colors = Object.values(AGENT_PROFILES).map((p) => p.color)
-    expect(new Set(colors).size).toBe(6)
+    expect(new Set(colors).size).toBe(10)
   })
 
   it('MEETING_ORDER commence et finit par Mia', () => {

@@ -1,0 +1,24 @@
+{
+  "version": "1.0",
+  "generatedAt": "2026-04-25T00:00:00.000Z",
+  "assets": [
+    {
+      "id": "ambiance-nature-001",
+      "filename": "forest-light-001.wav",
+      "description": "Forêt légère, oiseaux distants",
+      "mood": "nature",
+      "durationS": 6.0,
+      "loopable": true,
+      "tags": ["forêt", "nature", "doux"]
+    },
+    {
+      "id": "ambiance-urban-001",
+      "filename": "city-indoor-001.wav",
+      "description": "Intérieur urbain, ambiance feutrée",
+      "mood": "urban",
+      "durationS": 5.0,
+      "loopable": true,
+      "tags": ["urbain", "intérieur", "calme"]
+    }
+  ]
+}

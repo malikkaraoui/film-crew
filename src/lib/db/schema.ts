@@ -89,3 +89,17 @@ export const config = pgTable('config', {
   value: text('value').notNull(),
   updatedAt: timestamp('updated_at').defaultNow(),
 })
+
+export const audioAsset = pgTable('audio_asset', {
+  id: text('id').primaryKey(),
+  runId: text('run_id').notNull().references(() => run.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),       // AudioAssetType: dialogue_script | sound_bible | music_intentions | audio_timeline | audio_preview | audio_final
+  data: jsonb('data'),                // contenu JSON de l'artefact
+  filePath: text('file_path'),        // chemin fichier WAV si applicable
+  durationS: real('duration_s'),
+  status: text('status').notNull().default('draft'), // AudioAssetStatus: draft | assembled | validated | rejected
+  validatedAt: timestamp('validated_at'),
+  validatedBy: text('validated_by'),  // 'human' | 'auto'
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+})

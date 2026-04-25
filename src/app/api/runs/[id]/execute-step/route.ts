@@ -60,7 +60,7 @@ export async function POST(
     const steps = await getRunSteps(id)
     const currentRunStep = steps.find((step) => step.stepNumber === currentStep)
     const body = await request.json().catch(() => ({})) as {
-      llmMode?: 'local' | 'cloud'
+      llmMode?: 'local' | 'cloud' | 'openrouter'
       llmModel?: string
       confirmPaidGeneration?: boolean
       confirmationText?: string
