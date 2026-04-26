@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll } from 'vitest'
 import { rmSync, mkdirSync } from 'fs'
-import { writeFile, readFile } from 'fs/promises'
+import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { buildPublishPackage, savePublishPackage, readPublishPackage } from '@/lib/publishers/publish-package'
