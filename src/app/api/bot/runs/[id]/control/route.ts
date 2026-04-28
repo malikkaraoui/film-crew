@@ -9,6 +9,8 @@ import { syncStep2MeetingState } from '@/lib/runs/meeting-sync'
 import { getProjectStatusLabel, getRunStepLabel } from '@/lib/runs/presentation'
 import { buildLiveEvents, buildMeetingVerdict, buildNextAction } from '@/lib/api/bot-run-control'
 import { approveAndLaunchNextStep, launchCurrentStep, RunActionError, validateCurrentStep, type LaunchCurrentStepInput } from '@/lib/runs/manual-actions'
+import { killRun } from '@/lib/pipeline/kill-switch'
+import { resetRunFromStep } from '@/lib/pipeline/reset'
 
 async function readBriefFile(runId: string) {
   try {
@@ -134,6 +136,18 @@ export async function POST(
       result = await validateCurrentStep(id)
     } else if (action === 'approve_and_launch_next_step') {
       result = await approveAndLaunchNextStep(id, launchPayload)
+    } else if (action === 'kill') {
+      const run = await getRunById(id)
+      if (!run) throw new RunActionError('Projet introuvable', 'NOT_FOUND', 404)
+      const TERMINAL = ['completed', 'failed', 'killed']
+      if (TERMINAL.includes(run.status)) {
+        throw new RunActionError(`Le run est déjà dans un état terminal : "${run.status}"`, 'INVALID_STATE', 409)
+      }
+      result = await killRun(id)
+    } else if (action === 'rerun_meeting') {
+      const storagePath = join(process.cwd(), 'storage', 'runs', id)
+      await resetRunFromStep({ runId: id, storagePath, stepNumber: 2 })
+      result = await launchCurrentStep(id, launchPayload)
     } else {
       return NextResponse.json(
         { error: { code: 'VALIDATION_ERROR', message: `Action bot inconnue : ${action}` } },
