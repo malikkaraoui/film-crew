@@ -7,7 +7,7 @@ export type StepLlmConfig = {
   model: string
 }
 
-export type StepLlmConfigs = Partial<Record<'2' | '3' | '4' | '6', StepLlmConfig>>
+export type StepLlmConfigs = Partial<Record<'2' | '3' | '4' | '7', StepLlmConfig>>
 
 export type OutputConfig = {
   videoCount: number
@@ -25,6 +25,7 @@ export type GenerationMode = 'manual' | 'automatic'
 export type ProjectConfig = {
   meetingLlmMode: MeetingLlmMode
   meetingLlmModel: string
+  meetingPromptNote?: string | null
   stepLlmConfigs?: StepLlmConfigs
   outputConfig?: OutputConfig | null
   referenceImages?: ReferenceImageConfig | null

@@ -7,7 +7,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { useLlmCatalog } from '@/lib/client/use-llm-catalog'
 import { INTENTION_BLOCS, getVisibleQuestions } from '@/lib/intention/schema'
+import {
+  buildModelOptions,
+  findModelDetail,
+  getModelDetailsForMode,
+} from '@/lib/llm/catalog'
 import { parseStepLlmDefaultsFromConfigEntries } from '@/lib/settings/step-llm-defaults'
 import type { Chain } from '@/types/chain'
 import type { MeetingLlmMode } from '@/types/run'
@@ -41,13 +47,6 @@ const DEFAULT_OPENROUTER_MODEL = 'nvidia/nemotron-3-nano-30b-a3b:free'
 const DEFAULT_FULL_VIDEO_DURATION_S = 60
 const LOCKED_SCENE_DURATION_S = 10
 
-function buildModelOptions(models: string[], selectedModel: string): string[] {
-  const normalizedSelectedModel = selectedModel.trim()
-  if (!normalizedSelectedModel) return models
-  if (models.includes(normalizedSelectedModel)) return models
-  return [normalizedSelectedModel, ...models]
-}
-
 function NewRunForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -61,10 +60,6 @@ function NewRunForm() {
   const [templates, setTemplates] = useState<{ id: string; name: string; description: string }[]>([])
   const [templateId, setTemplateId] = useState('')
   const [meetingMode, setMeetingMode] = useState<MeetingLlmMode>('local')
-  const [localModels, setLocalModels] = useState<string[]>([])
-  const [cloudModels, setCloudModels] = useState<string[]>([])
-  const [openRouterModels, setOpenRouterModels] = useState<string[]>([])
-  const [localModelsError, setLocalModelsError] = useState('')
   const [meetingLocalModel, setMeetingLocalModel] = useState(DEFAULT_LOCAL_MODEL)
   const [meetingCloudModel, setMeetingCloudModel] = useState(DEFAULT_CLOUD_MODEL)
   const [meetingOpenRouterModel, setMeetingOpenRouterModel] = useState(DEFAULT_OPENROUTER_MODEL)
@@ -80,22 +75,21 @@ function NewRunForm() {
   const [showQuestionnaire, setShowQuestionnaire] = useState(false)
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [openBloc, setOpenBloc] = useState<string | null>(null)
+  const { catalog, refreshCatalog, refreshingProvider } = useLlmCatalog(meetingMode)
 
   useEffect(() => {
     async function load() {
-      const [chainsRes, estimateRes, templatesRes, llmRes, configRes] = await Promise.all([
+      const [chainsRes, estimateRes, templatesRes, configRes] = await Promise.all([
         fetch('/api/chains'),
         fetch('/api/runs/estimate'),
         fetch('/api/templates'),
-        fetch('/api/llm/models'),
         fetch('/api/config', { cache: 'no-store' }),
       ])
 
-      const [chainsJson, estimateJson, templatesJson, llmJson, configJson] = await Promise.all([
+      const [chainsJson, estimateJson, templatesJson, configJson] = await Promise.all([
         chainsRes.json(),
         estimateRes.json(),
         templatesRes.json(),
-        llmRes.json(),
         configRes.json(),
       ])
 
@@ -113,45 +107,21 @@ function NewRunForm() {
       if (estimateJson.data) setEstimate(estimateJson.data)
       if (templatesJson.data) setTemplates(templatesJson.data)
 
-      const models = Array.isArray(llmJson.data?.localModels) ? llmJson.data.localModels as string[] : []
-      const cloud = Array.isArray(llmJson.data?.cloudModels) ? llmJson.data.cloudModels as string[] : []
-      const openRouter = Array.isArray(llmJson.data?.openRouterModels) ? llmJson.data.openRouterModels as string[] : []
-      setLocalModels(models)
-      setCloudModels(cloud)
-      setOpenRouterModels(openRouter)
-      if (llmJson.data?.localError) setLocalModelsError(llmJson.data.localError)
-
       const configRows = Array.isArray(configJson.data) ? configJson.data as ConfigRow[] : []
       const stepDefaults = parseStepLlmDefaultsFromConfigEntries(configRows)
       const step2Default = stepDefaults['2']
 
       if (step2Default) {
         setMeetingMode(step2Default.mode)
-        setMeetingLocalModel(step2Default.mode === 'local'
-          ? step2Default.model
-          : (models.includes(step2Default.model) ? step2Default.model : (models[0] ?? step2Default.model)))
-        setMeetingCloudModel(step2Default.mode === 'cloud'
-          ? step2Default.model
-          : (cloud.includes(step2Default.model) ? step2Default.model : (cloud[0] ?? step2Default.model)))
-        setMeetingOpenRouterModel(step2Default.mode === 'openrouter'
-          ? step2Default.model
-          : (openRouter.includes(step2Default.model) ? step2Default.model : (openRouter[0] ?? step2Default.model)))
-      } else {
-        if (models.length > 0) {
-          setMeetingLocalModel((current) => models.includes(current) ? current : models[0])
-        }
-        if (cloud.length > 0) {
-          setMeetingCloudModel((current) => cloud.includes(current) ? current : cloud[0])
-        }
-        if (openRouter.length > 0) {
-          setMeetingOpenRouterModel((current) => openRouter.includes(current) ? current : openRouter[0])
-        }
+        setMeetingLocalModel(step2Default.model)
+        setMeetingCloudModel(step2Default.model)
+        setMeetingOpenRouterModel(step2Default.model)
       }
     }
 
     void load()
       .catch(() => {
-        setLocalModelsError('Impossible de lister les modèles Ollama locaux')
+        setError('Impossible de charger les données du formulaire')
       })
       .finally(() => setLoadingEstimate(false))
   }, [searchParams])
@@ -167,9 +137,10 @@ function NewRunForm() {
     : meetingMode === 'openrouter'
       ? meetingOpenRouterModel.trim()
       : meetingLocalModel.trim()
-  const meetingLocalModelOptions = buildModelOptions(localModels, meetingLocalModel)
-  const meetingCloudModelOptions = buildModelOptions(cloudModels, meetingCloudModel)
-  const meetingOpenRouterModelOptions = buildModelOptions(openRouterModels, meetingOpenRouterModel)
+  const meetingLocalModelOptions = buildModelOptions(getModelDetailsForMode(catalog, 'local'), meetingLocalModel)
+  const meetingCloudModelOptions = buildModelOptions(getModelDetailsForMode(catalog, 'cloud'), meetingCloudModel)
+  const meetingOpenRouterModelOptions = buildModelOptions(getModelDetailsForMode(catalog, 'openrouter'), meetingOpenRouterModel)
+  const selectedMeetingDetail = findModelDetail(catalog, meetingMode, selectedMeetingModel)
   const derivedSceneCount = Math.max(1, Math.ceil(fullVideoDurationS / LOCKED_SCENE_DURATION_S))
   const durationMismatch = fullVideoDurationS % LOCKED_SCENE_DURATION_S !== 0
   const referenceImageUrls = [
@@ -222,6 +193,11 @@ function NewRunForm() {
 
     setUploadedReferenceImage2(null)
     setReferenceImageUrl2('')
+  }
+
+  function handleMeetingModeChange(nextMode: MeetingLlmMode) {
+    setMeetingMode(nextMode)
+    void refreshCatalog(nextMode)
   }
 
   async function handleLaunch() {
@@ -430,11 +406,22 @@ function NewRunForm() {
             <CardTitle className="text-sm font-medium">Réunion LLM</CardTitle>
             <div className="space-y-3 text-sm">
               <div>
-                <Label htmlFor="meeting-mode">Mode</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <Label htmlFor="meeting-mode">Mode</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void refreshCatalog(meetingMode, true)}
+                    disabled={refreshingProvider === meetingMode}
+                  >
+                    {refreshingProvider === meetingMode ? 'Rafraîchissement...' : 'Rafraîchir la liste'}
+                  </Button>
+                </div>
                 <select
                   id="meeting-mode"
                   value={meetingMode}
-                  onChange={(e) => setMeetingMode(e.target.value as MeetingLlmMode)}
+                  onChange={(e) => handleMeetingModeChange(e.target.value as MeetingLlmMode)}
                   className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                 >
                   <option value="local">Local via Ollama (sur ce Mac)</option>
@@ -454,7 +441,7 @@ function NewRunForm() {
                       className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                     >
                       {meetingLocalModelOptions.map((model) => (
-                        <option key={model} value={model}>{model}</option>
+                        <option key={model.id} value={model.id}>{model.label}</option>
                       ))}
                     </select>
                   ) : (
@@ -465,11 +452,17 @@ function NewRunForm() {
                       placeholder="qwen2.5:7b"
                     />
                   )}
-                  {localModelsError && (
+                  {catalog.localError && (
                     <p className="mt-1 text-xs text-amber-700">
-                      {localModelsError}
+                      {catalog.localError}
                     </p>
                   )}
+                  {selectedMeetingDetail?.description && (
+                    <p className="mt-1 text-xs text-muted-foreground">{selectedMeetingDetail.description}</p>
+                  )}
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Liste Ollama sondée en live en arrière-plan tant que ce provider est sélectionné.
+                  </p>
                 </div>
               ) : meetingMode === 'cloud' ? (
                 <div>
@@ -482,7 +475,7 @@ function NewRunForm() {
                       className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                     >
                       {meetingCloudModelOptions.map((model) => (
-                        <option key={model} value={model}>{model}</option>
+                        <option key={model.id} value={model.id}>{model.label}</option>
                       ))}
                     </select>
                   ) : (
@@ -493,9 +486,12 @@ function NewRunForm() {
                       placeholder="deepseek-v3.1:671b-cloud"
                     />
                   )}
-                  {cloudModels.length > 0 && (
+                  {selectedMeetingDetail?.description && (
+                    <p className="mt-1 text-xs text-muted-foreground">{selectedMeetingDetail.description}</p>
+                  )}
+                  {catalog.cloudModels.length > 0 && (
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Cloud dispo : {cloudModels.join(' · ')}
+                      Cloud dispo : {catalog.cloudModels.join(' · ')}
                     </p>
                   )}
                 </div>
@@ -510,7 +506,7 @@ function NewRunForm() {
                       className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                     >
                       {meetingOpenRouterModelOptions.map((model) => (
-                        <option key={model} value={model}>{model}</option>
+                        <option key={model.id} value={model.id}>{model.label}</option>
                       ))}
                     </select>
                   ) : (
@@ -521,8 +517,14 @@ function NewRunForm() {
                       placeholder="nvidia/nemotron-3-nano-30b-a3b:free"
                     />
                   )}
+                  {selectedMeetingDetail?.description && (
+                    <p className="mt-1 text-xs text-muted-foreground">{selectedMeetingDetail.description}</p>
+                  )}
+                  {catalog.openRouterError && (
+                    <p className="mt-1 text-xs text-amber-700">{catalog.openRouterError}</p>
+                  )}
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Modèles texte d’essai via OpenRouter pour la réunion de l’étape 2.
+                    Listing live des modèles texte gratuits OpenRouter pour la réunion de l’étape 2.
                   </p>
                 </div>
               )}

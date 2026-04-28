@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterAll } from 'vitest'
 import { mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { alignStructuredStoryToBriefOutline } from '../steps/step-3-json'
+import { backfillSceneOutlineDialogue, extractBriefSceneDialogues, findScenesMissingDialogue, normalizeDialogueScenesWithFallback } from '@/lib/meeting/scene-dialogue'
 
 const FIXTURE_DIR = join(__dirname, '__fixtures__')
 
@@ -71,6 +72,66 @@ describe('Chaîne critique — parsing et cohérence', () => {
       expect((aligned.scenes as unknown[])).toHaveLength(2)
       expect((aligned.scenes as Array<{ index: number }>)[1].index).toBe(2)
       expect((aligned.scenes as Array<{ description: string }>)[1].description).toContain('explorer la montagne')
+    })
+
+    it('réinjecte le dialogue depuis la section sami si le sceneOutline l’a perdu', () => {
+      const dialogueMap = extractBriefSceneDialogues({
+        sections: [
+          {
+            agent: 'sami',
+            title: 'Dialogues',
+            content: '**SCÈNE 3 - TEMPÊTE :**\n"Ils disent que j\'ai tenu cinq jours..."\n"...quelque chose qui n\'existe pas."',
+          },
+        ],
+        sceneOutline: [],
+      })
+
+      const repaired = backfillSceneOutlineDialogue(
+        [
+          {
+            index: 3,
+            title: 'Tempête',
+            description: 'Mer déchaînée',
+            dialogue: '',
+            camera: 'fixe',
+            lighting: 'orage',
+            duration_s: 8,
+          },
+        ],
+        dialogueMap,
+      )
+
+      expect(repaired[0].dialogue).toContain('Ils disent que j\'ai tenu cinq jours')
+      expect(repaired[0].dialogue).toContain('quelque chose qui n\'existe pas')
+    })
+
+    it('reconstruit des lignes de dialogue si une scène parlée revient vide du LLM', () => {
+      const scenes = normalizeDialogueScenesWithFallback({
+        scenes: [
+          {
+            sceneIndex: 3,
+            title: 'Tempête',
+            durationTargetS: 8,
+            lines: [],
+            silences: [],
+            stageDirections: '',
+          },
+        ],
+        structuredScenes: [
+          { index: 3, description: 'Mer déchaînée', dialogue: '' },
+        ],
+        dialogueByScene: new Map([
+          [3, 'Ils disent que j\'ai tenu cinq jours... ...quelque chose qui n\'existe pas.'],
+        ]),
+      })
+
+      expect(scenes[0].lines.length).toBeGreaterThan(0)
+      expect(scenes[0].lines[0].text).toContain('Ils disent que j\'ai tenu cinq jours')
+      expect(findScenesMissingDialogue({
+        scenes,
+        structuredScenes: [{ index: 3, description: 'Mer déchaînée', dialogue: '' }],
+        dialogueByScene: new Map([[3, 'Ils disent que j\'ai tenu cinq jours...']]),
+      })).toEqual([])
     })
   })
 

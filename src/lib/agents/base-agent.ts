@@ -46,6 +46,21 @@ export class BaseAgent {
 
     this.conversationHistory.push({ role: 'user', content: finalContext })
 
+    logger.info({
+      event: 'agent_prompt_prepared',
+      runId,
+      agent: this.profile.role,
+      systemPrompt: this.profile.systemPrompt,
+      userPrompt: finalContext,
+      messages: this.conversationHistory.map((message) => ({
+        role: message.role,
+        content: message.content,
+      })),
+      messageCount: this.conversationHistory.length,
+      model: opts.model,
+      host: opts.host,
+    })
+
     const start = Date.now()
 
     const { result, provider } = await executeWithFailover(

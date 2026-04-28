@@ -7,6 +7,14 @@ export async function getRuns() {
   return db.select().from(run).orderBy(desc(run.createdAt))
 }
 
+export async function getRunsByChainId(chainId: string) {
+  return db
+    .select()
+    .from(run)
+    .where(eq(run.chainId, chainId))
+    .orderBy(desc(run.createdAt))
+}
+
 export async function getRunById(id: string) {
   const rows = await db.select().from(run).where(eq(run.id, id))
   return rows[0] ?? null

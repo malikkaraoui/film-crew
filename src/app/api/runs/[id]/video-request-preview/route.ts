@@ -56,7 +56,7 @@ export async function GET(
       const message = (error as Error).message
       if (/ENOENT|no such file or directory/i.test(message)) {
         promptsMeta = {
-          reason: 'prompts.json absent — étape 6 en cours ou non encore terminée',
+          reason: 'prompts.json absent — étape 7 en cours ou non encore terminée',
         }
       } else {
         throw error

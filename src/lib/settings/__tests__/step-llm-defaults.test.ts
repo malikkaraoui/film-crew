@@ -12,7 +12,7 @@ describe('step-llm-defaults', () => {
     expect(defaults['2']).toEqual(getBuiltInStepLlmDefault('2'))
     expect(defaults['3']).toEqual(getBuiltInStepLlmDefault('3'))
     expect(defaults['4']).toEqual(getBuiltInStepLlmDefault('4'))
-    expect(defaults['6']).toEqual(getBuiltInStepLlmDefault('6'))
+    expect(defaults['7']).toEqual(getBuiltInStepLlmDefault('7'))
   })
 
   it('reconstruit les defaults par étape depuis des entrées config', () => {

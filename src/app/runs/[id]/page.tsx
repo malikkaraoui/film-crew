@@ -6,7 +6,14 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { useLlmCatalog } from '@/lib/client/use-llm-catalog'
 import { translatePromptText } from '@/lib/client/prompt-translation'
+import {
+  buildModelOptions,
+  findModelDetail,
+  getModelDetailsForMode,
+  getModelsForMode,
+} from '@/lib/llm/catalog'
 import type { LlmMode, ProjectConfig, Run, RunStep, StepLlmConfig } from '@/types/run'
 import { TOTAL_PIPELINE_STEPS } from '@/lib/pipeline/constants'
 import { getRunStepLabel } from '@/lib/runs/presentation'
@@ -44,44 +51,17 @@ type PrimaryAction = {
   busy?: boolean
 }
 
-type LlmCatalog = {
-  localModels: string[]
-  localError: string | null
-  cloudModels: string[]
-  cloudAvailable: boolean
-  openRouterModels: string[]
-  openRouterAvailable: boolean
-}
-
-function getModelsForMode(catalog: LlmCatalog, mode: LlmMode): string[] {
-  if (mode === 'cloud') return catalog.cloudModels
-  if (mode === 'openrouter') return catalog.openRouterModels
-  return catalog.localModels
-}
-
-function buildModelOptions(models: string[], selectedModel: string): string[] {
-  const normalizedSelectedModel = selectedModel.trim()
-  if (!normalizedSelectedModel) return models
-  if (models.includes(normalizedSelectedModel)) return models
-  return [normalizedSelectedModel, ...models]
-}
-
-function getModelPlaceholder(mode: LlmMode): string {
-  if (mode === 'cloud') return 'deepseek-v3.1:671b-cloud'
-  if (mode === 'openrouter') return 'nvidia/nemotron-3-nano-30b-a3b:free'
-  return 'qwen2.5:7b'
-}
-
 const STEP_EXPECTATIONS: Record<number, { label: string; expected: string }> = {
   1: { label: 'Idée', expected: 'intention.json — idée enrichie et cadrée' },
   2: { label: 'Brainstorm', expected: 'brief.json — réunion et sections agents' },
   3: { label: 'JSON structuré', expected: 'structure.json — structure canonique du film' },
   4: { label: 'Blueprint visuel', expected: 'storyboard-blueprint.json — plan visuel simple scène par scène' },
   5: { label: 'Storyboard', expected: 'manifest storyboard + rough local + planche de vignettes' },
-  6: { label: 'Prompts', expected: 'prompt-manifest.json — prompts vidéo + négatifs' },
-  7: { label: 'Génération', expected: 'generation-manifest.json — clips/audio générés' },
-  8: { label: 'Preview', expected: 'preview-manifest.json + brouillon playable si dispo' },
-  9: { label: 'Publication', expected: 'publish-manifest.json + contexte export' },
+  6: { label: 'Audio Package', expected: 'audio-master-manifest.json — master audio canonique' },
+  7: { label: 'Prompts', expected: 'prompt-manifest.json — prompts vidéo + négatifs' },
+  8: { label: 'Génération', expected: 'generation-manifest.json — clips/audio générés' },
+  9: { label: 'Preview', expected: 'preview-manifest.json + brouillon playable si dispo' },
+  10: { label: 'Publication', expected: 'publish-manifest.json + contexte export' },
 }
 
 const STEP_ACTIONS: Record<number, string> = {
@@ -90,19 +70,20 @@ const STEP_ACTIONS: Record<number, string> = {
   3: 'Générer la structure JSON du film',
   4: 'Fabriquer le blueprint visuel scène par scène',
   5: 'Générer le storyboard rough scène par scène',
-  6: 'Préparer les prompts vidéo',
-  7: 'Lancer la génération des clips',
-  8: 'Assembler et relire la preview',
-  9: 'Préparer la publication finale',
+  6: 'Produire le package audio canonique',
+  7: 'Préparer les prompts vidéo',
+  8: 'Lancer la génération des clips',
+  9: 'Assembler et relire la preview',
+  10: 'Préparer la publication finale',
 }
 
 const STEP_VIEW_LABELS: Record<number, string> = {
   2: 'Ouvrir le studio brainstorm',
   5: 'Ouvrir le storyboard',
-  6: 'Ouvrir les prompts',
-  7: 'Ouvrir la génération',
-  8: 'Ouvrir la preview',
-  9: 'Ouvrir la publication',
+  7: 'Ouvrir les prompts',
+  8: 'Ouvrir la génération',
+  9: 'Ouvrir la preview',
+  10: 'Ouvrir la publication',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -231,12 +212,12 @@ function getFocalStep(run: RunWithSteps): number {
 }
 
 function isLlmBackedStep(stepNumber: number): boolean {
-  return [2, 3, 4, 6].includes(stepNumber)
+  return [2, 3, 4, 7].includes(stepNumber)
 }
 
 function getStepLlmConfig(config: ProjectConfig | null | undefined, stepNumber: number): StepLlmConfig | null {
-  const key = String(stepNumber) as '2' | '3' | '4' | '6'
-  if (![2, 3, 4, 6].includes(stepNumber)) return null
+  const key = String(stepNumber) as '2' | '3' | '4' | '7'
+  if (![2, 3, 4, 7].includes(stepNumber)) return null
 
   if (config?.stepLlmConfigs?.[key]) return config.stepLlmConfigs[key] ?? null
   if (stepNumber === 2 && config) {
@@ -264,6 +245,15 @@ function shortText(value: unknown, max = 220): string {
   const text = readText(value)
   if (!text) return '—'
   return text.length > max ? `${text.slice(0, max - 1)}…` : text
+}
+
+function readNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number.parseFloat(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
 }
 
 async function collectPaidGenerationConfirmation(sceneCount: number): Promise<null | {
@@ -311,9 +301,9 @@ export default function RunPage() {
   const [actionBusy, setActionBusy] = useState<'launch' | 'validate' | 'rewind' | 'kill' | 'export-meeting' | 'delete-meeting' | null>(null)
   const [traces, setTraces] = useState<DashboardAgentTrace[]>([])
   const [failoverLog, setFailoverLog] = useState<DashboardFailoverEntry[]>([])
-  const [catalog, setCatalog] = useState<LlmCatalog>({ localModels: [], localError: null, cloudModels: [], cloudAvailable: false, openRouterModels: [], openRouterAvailable: false })
   const [selectedLlmMode, setSelectedLlmMode] = useState<LlmMode>('local')
   const [selectedLlmModel, setSelectedLlmModel] = useState('')
+  const { catalog, refreshCatalog, refreshingProvider } = useLlmCatalog(selectedLlmMode)
   const [step6TranslatedPrompts, setStep6TranslatedPrompts] = useState<Record<number, string>>({})
   const [step6Translating, setStep6Translating] = useState<Record<number, 'fr-en' | 'en-fr' | null>>({})
   const [step6TranslationNotice, setStep6TranslationNotice] = useState<Record<number, { tone: 'success' | 'error'; message: string }>>({})
@@ -333,7 +323,6 @@ export default function RunPage() {
 
   useEffect(() => {
     void loadRun()
-    void loadLlmCatalog()
     const interval = setInterval(() => {
       void loadRun()
     }, 3000)
@@ -372,16 +361,6 @@ export default function RunPage() {
     const res = await fetch(`/api/runs/${id}`)
     const json = await res.json()
     if (json.data) setRun(json.data)
-  }
-
-  async function loadLlmCatalog() {
-    try {
-      const res = await fetch('/api/llm/models', { cache: 'no-store' })
-      const json = await res.json()
-      if (json.data) setCatalog(json.data)
-    } catch {
-      setCatalog({ localModels: [], localError: 'Catalogue LLM indisponible', cloudModels: [], cloudAvailable: false, openRouterModels: [], openRouterAvailable: false })
-    }
   }
 
   async function loadTraces() {
@@ -453,10 +432,12 @@ export default function RunPage() {
       acknowledgedSceneCount: number
     } | null = null
 
-    if (selectedStep === 7) {
-      const promptCount = deliverablePrompts.length
+    if (selectedStep === 8) {
+      const promptRes = await fetch(`/api/runs/${id}/prompts`, { cache: 'no-store' })
+      const promptJson = await promptRes.json()
+      const promptCount = Array.isArray(promptJson.data?.prompts) ? promptJson.data.prompts.length : 0
       if (promptCount <= 0) {
-        setRunNotice('Aucun prompt détecté pour l’étape 7. Génération bloquée.')
+        setRunNotice('Aucun prompt détecté pour l’étape 8. Génération bloquée.')
         return
       }
 
@@ -653,6 +634,7 @@ export default function RunPage() {
   const deliverableClips = useMemo(() => asArray(parsedDeliverable?.clips), [parsedDeliverable])
 
   const selectedStepLlmConfig = getStepLlmConfig(run?.projectConfig, selectedStep)
+  const selectedLlmDetail = findModelDetail(catalog, selectedLlmMode, selectedLlmModel)
 
   useEffect(() => {
     if (!isLlmBackedStep(selectedStep)) return
@@ -796,7 +778,7 @@ export default function RunPage() {
     }
     actionHint = isLlmBackedStep(selectedStep)
       ? `LLM prévu : ${selectedLlmMode} · ${selectedLlmModel || 'à choisir'}. Le projet exécutera uniquement cette étape.`
-      : selectedStep === 7
+      : selectedStep === 8
         ? 'Étape payante sensible : double confirmation + saisie manuelle obligatoires avant tout appel provider.'
       : 'Le projet exécutera uniquement cette étape, puis se remettra en pause pour validation.'
   } else if (canRelaunchCurrentStep) {
@@ -829,7 +811,12 @@ export default function RunPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold truncate max-w-md">{run.idea}</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-xl font-semibold truncate max-w-md">{run.idea}</h1>
+          <Link href={`/runs/${id}/control`} className="inline-flex">
+            <Button variant="outline">Ouvrir le tour de contrôle</Button>
+          </Link>
+        </div>
       </div>
 
       <div className={`mt-6 rounded-xl border p-4 ${topPanelClasses}`}>
@@ -882,7 +869,11 @@ export default function RunPage() {
                       <select
                         id="step-llm-mode"
                         value={selectedLlmMode}
-                        onChange={(e) => setSelectedLlmMode(e.target.value as LlmMode)}
+                        onChange={(e) => {
+                          const nextMode = e.target.value as LlmMode
+                          setSelectedLlmMode(nextMode)
+                          void refreshCatalog(nextMode)
+                        }}
                         className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
                         disabled={run.status === 'running'}
                       >
@@ -893,8 +884,19 @@ export default function RunPage() {
                     </div>
 
                     <div>
-                      <label htmlFor="step-llm-model" className="text-xs font-medium text-muted-foreground">Modèle</label>
-                      {buildModelOptions(getModelsForMode(catalog, selectedLlmMode), selectedLlmModel).length > 0 ? (
+                      <div className="flex items-center justify-between gap-2">
+                        <label htmlFor="step-llm-model" className="text-xs font-medium text-muted-foreground">Modèle</label>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void refreshCatalog(selectedLlmMode, true)}
+                          disabled={run.status === 'running' || refreshingProvider === selectedLlmMode}
+                        >
+                          {refreshingProvider === selectedLlmMode ? 'Rafraîchissement...' : 'Rafraîchir'}
+                        </Button>
+                      </div>
+                      {buildModelOptions(getModelDetailsForMode(catalog, selectedLlmMode), selectedLlmModel).length > 0 ? (
                         <select
                           id="step-llm-model"
                           value={selectedLlmModel}
@@ -902,8 +904,8 @@ export default function RunPage() {
                           className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
                           disabled={run.status === 'running'}
                         >
-                          {buildModelOptions(getModelsForMode(catalog, selectedLlmMode), selectedLlmModel).map((model) => (
-                            <option key={model} value={model}>{model}</option>
+                          {buildModelOptions(getModelDetailsForMode(catalog, selectedLlmMode), selectedLlmModel).map((model) => (
+                            <option key={model.id} value={model.id}>{model.label}</option>
                           ))}
                         </select>
                       ) : (
@@ -911,10 +913,14 @@ export default function RunPage() {
                           id="step-llm-model"
                           value={selectedLlmModel}
                           onChange={(e) => setSelectedLlmModel(e.target.value)}
-                          placeholder={getModelPlaceholder(selectedLlmMode)}
+                          placeholder={selectedLlmMode === 'cloud' ? 'deepseek-v3.1:671b-cloud' : selectedLlmMode === 'openrouter' ? 'nvidia/nemotron-3-nano-30b-a3b:free' : 'qwen2.5:7b'}
                           className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
                           disabled={run.status === 'running'}
                         />
+                      )}
+
+                      {selectedLlmDetail?.description && (
+                        <div className="mt-1 text-xs text-muted-foreground">{selectedLlmDetail.description}</div>
                       )}
                     </div>
                   </div>
@@ -928,6 +934,12 @@ export default function RunPage() {
                   {!catalog.openRouterAvailable && selectedLlmMode === 'openrouter' && (
                     <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                       OpenRouter n&apos;est pas confirmé côté runtime. Vérifie `OPENROUTER_API_KEY`.
+                    </div>
+                  )}
+
+                  {catalog.openRouterError && selectedLlmMode === 'openrouter' && (
+                    <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      {catalog.openRouterError}
                     </div>
                   )}
                 </div>
@@ -1174,7 +1186,7 @@ export default function RunPage() {
                     </div>
                   )}
                 </div>
-              ) : selectedStep === 6 ? (
+              ) : selectedStep === 7 ? (
                 <div className="space-y-3">
                   {deliverablePrompts.length > 0 ? deliverablePrompts.map((prompt, index) => {
                     const record = asRecord(prompt)
@@ -1224,7 +1236,85 @@ export default function RunPage() {
                     </pre>
                   )}
                 </div>
-              ) : selectedStep === 7 ? (
+              ) : selectedStep === 6 ? (
+                <div className="space-y-4">
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-lg border p-4">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Durée totale</div>
+                      <div className="mt-1 text-sm font-medium">
+                        {readNumber(parsedDeliverable.totalDurationS) ? `${readNumber(parsedDeliverable.totalDurationS)?.toFixed(1)}s` : '—'}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border p-4">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Sample rate</div>
+                      <div className="mt-1 text-sm font-medium">
+                        {readNumber(parsedDeliverable.sampleRate) ? `${readNumber(parsedDeliverable.sampleRate)} Hz` : '—'}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border p-4">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">TTS provider</div>
+                      <div className="mt-1 text-sm font-medium">
+                        {deliverableScenes.length > 0
+                          ? readText(asRecord(deliverableScenes[0])?.ttsProvider) || '—'
+                          : '—'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border p-4 space-y-3">
+                    <div>
+                      <div className="text-sm font-semibold">Lecture du master audio</div>
+                      <div className="text-xs text-muted-foreground">Lecture directe depuis le front avec streaming.</div>
+                    </div>
+                    <audio
+                      controls
+                      preload="metadata"
+                      className="w-full"
+                      src={`/api/runs/${id}/audio`}
+                    >
+                      Ton navigateur ne supporte pas la lecture audio HTML5.
+                    </audio>
+                  </div>
+
+                  <div className="space-y-3">
+                    {deliverableScenes.length > 0 ? deliverableScenes.map((scene, index) => {
+                      const record = asRecord(scene)
+                      const sceneIndex = readNumber(record?.sceneIndex) ?? index + 1
+                      const duration = readNumber(record?.durationS)
+                      const status = readText(record?.status) || '—'
+                      return (
+                        <div key={`audio-scene-${index}`} className="rounded-lg border p-4 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-semibold">Scène {sceneIndex}</div>
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                {duration ? `${duration.toFixed(1)}s` : 'Durée inconnue'} · {status}
+                              </div>
+                            </div>
+                            <Badge variant="outline">{readText(record?.ttsProvider) || 'tts'}</Badge>
+                          </div>
+                          <audio
+                            controls
+                            preload="metadata"
+                            className="w-full"
+                            src={`/api/runs/${id}/audio?sceneIndex=${sceneIndex}`}
+                          >
+                            Ton navigateur ne supporte pas la lecture audio HTML5.
+                          </audio>
+                        </div>
+                      )
+                    }) : (
+                      <div className="rounded-lg border px-4 py-8 text-sm text-muted-foreground">
+                        Aucune scène audio visible dans le manifest.
+                      </div>
+                    )}
+                  </div>
+
+                  <pre className="max-h-108 overflow-auto rounded-lg border bg-background p-4 text-xs whitespace-pre-wrap wrap-break-word">
+                    {deliverablePreview}
+                  </pre>
+                </div>
+              ) : selectedStep === 8 ? (
                 <div className="space-y-3">
                   {deliverableClips.length > 0 ? deliverableClips.map((clip, index) => {
                     const record = asRecord(clip)

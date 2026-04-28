@@ -48,27 +48,33 @@ function getConfig(runId: string, stepNumber: number): DeliverableConfig | null 
       editable: false,
     },
     6: {
+      title: 'Audio Package',
+      expected: 'Master audio canonique + manifest + scènes mixées',
+      filePath: join(base, 'audio', 'audio-master-manifest.json'),
+      editable: false,
+    },
+    7: {
       title: 'Prompts vidéo',
       expected: 'Prompts scène par scène + négatifs',
       filePath: join(base, 'prompt-manifest.json'),
       pageHref: `/runs/${runId}/prompts`,
       editable: true,
     },
-    7: {
+    8: {
       title: 'Génération',
       expected: 'Manifest clips/audio + liens vers brouillons',
       filePath: join(base, 'generation-manifest.json'),
       pageHref: `/runs/${runId}/preview`,
       editable: true,
     },
-    8: {
+    9: {
       title: 'Preview',
       expected: 'Preview-manifest + média playable si dispo',
       filePath: join(base, 'preview-manifest.json'),
       pageHref: `/runs/${runId}/preview`,
       editable: true,
     },
-    9: {
+    10: {
       title: 'Publication',
       expected: 'Manifest publication + export contextualisé',
       filePath: join(base, 'publish-manifest.json'),
@@ -100,16 +106,19 @@ function summarize(stepNumber: number, content: string | null): string {
     if (stepNumber === 5 && Array.isArray(parsed.images)) {
       return `${parsed.images.length} image(s) storyboard dans le manifest.`
     }
-    if (stepNumber === 6 && Array.isArray(parsed.prompts)) {
+    if (stepNumber === 6 && Array.isArray(parsed.scenes)) {
+      return `${parsed.scenes.length} scène(s) audio dans le manifest master.`
+    }
+    if (stepNumber === 7 && Array.isArray(parsed.prompts)) {
       return `${parsed.prompts.length} prompt(s) vidéo prêts pour la génération.`
     }
-    if (stepNumber === 7 && Array.isArray(parsed.clips)) {
+    if (stepNumber === 8 && Array.isArray(parsed.clips)) {
       return `${parsed.clips.length} clip(s) dans le manifest de génération.`
     }
-    if (stepNumber === 8 && typeof parsed.mode === 'string') {
+    if (stepNumber === 9 && typeof parsed.mode === 'string') {
       return `Mode de preview actuel : ${parsed.mode}.`
     }
-    if (stepNumber === 9 && Array.isArray(parsed.attempts)) {
+    if (stepNumber === 10 && Array.isArray(parsed.attempts)) {
       return `${parsed.attempts.length} tentative(s) de publication enregistrée(s).`
     }
   } catch {

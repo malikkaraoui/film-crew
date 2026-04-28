@@ -34,7 +34,7 @@ export type CostEstimate = {
 }
 
 /**
- * Estime le coût d'un run standard (9 étapes) en EUR.
+ * Estime le coût d'un run standard (10 étapes) en EUR.
  * Utilise les providers enregistrés quand disponibles,
  * sinon retombe sur les tarifs par défaut.
  */
@@ -61,22 +61,23 @@ export async function estimateRunCost(): Promise<CostEstimate> {
   const storyboardCost = imgCost.costEur * 5
   breakdown.push({ step: 'Storyboard', provider: imgCost.provider, costEur: storyboardCost, note: '~5 images' })
 
-  // Étape 6 : Prompts Seedance → LLM
+  // Étape 6 : Audio Package → TTS
+  const ttsCost = await getProviderEstimate('tts', 'voix-1m30')
+  breakdown.push({ step: 'Audio Package', ...ttsCost })
+
+  // Étape 7 : Prompts Seedance → LLM
   const promptsCost = await getProviderEstimate('llm', 'prompts-seedance')
   breakdown.push({ step: 'Prompts Seedance', ...promptsCost })
 
-  // Étape 7 : Génération → Vidéo (6 clips) + TTS
+  // Étape 8 : Génération → Vidéo (6 clips)
   const videoCost = await getProviderEstimate('video', 'clip-10s')
   const totalVideoCost = videoCost.costEur * 6
   breakdown.push({ step: 'Génération vidéo', provider: videoCost.provider, costEur: totalVideoCost, note: '~6 clips x 10s' })
 
-  const ttsCost = await getProviderEstimate('tts', 'voix-1m30')
-  breakdown.push({ step: 'Voix TTS', ...ttsCost })
-
-  // Étape 8 : Preview → gratuit (FFmpeg local)
+  // Étape 9 : Preview → gratuit (FFmpeg local)
   breakdown.push({ step: 'Preview', provider: 'FFmpeg', costEur: 0, note: 'Local' })
 
-  // Étape 9 : Publication → gratuit
+  // Étape 10 : Publication → gratuit
   breakdown.push({ step: 'Publication', provider: '-', costEur: 0, note: 'Export local' })
 
   const totalEur = breakdown.reduce((sum, b) => sum + b.costEur, 0)

@@ -51,6 +51,18 @@ function setupManualMode(audioManifest: object | null = null, musicPath: string 
   }
 }
 
+function setupAutomaticMode(audioManifest: object | null = null, musicPath: string | null = null) {
+  mockReadProjectConfig.mockResolvedValue({ generationMode: 'automatic' } as never)
+  mockResolveMusicFromStructure.mockResolvedValue(musicPath)
+
+  if (audioManifest) {
+    mockReadFile.mockResolvedValue(JSON.stringify(audioManifest) as never)
+    mockAccess.mockResolvedValue(undefined)
+  } else {
+    mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
 })
@@ -90,6 +102,13 @@ describe('step6Generation — source audio canonique', () => {
     const ttsCalls = (mockExecuteWithFailover.mock.calls as Array<[string, ...unknown[]]>)
       .filter(([type]) => type === 'tts')
     expect(ttsCalls).toHaveLength(0)
+  })
+
+  it('mode automatique + audio absent → success=false (gate bloquant)', async () => {
+    setupAutomaticMode(null)
+    const result = await step6Generation.execute(makeCtx())
+    expect(result.success).toBe(false)
+    expect(result.error).toContain('gate audio bloquant')
   })
 })
 

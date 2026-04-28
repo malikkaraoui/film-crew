@@ -53,7 +53,7 @@ export async function GET(
           prompts: [],
         },
         meta: {
-          reason: 'prompts.json absent — étape 6 non encore terminée ou relance en cours',
+          reason: 'prompts.json absent — étape 7 non encore terminée ou relance en cours',
         },
       })
     }

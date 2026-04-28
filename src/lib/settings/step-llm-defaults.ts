@@ -43,9 +43,9 @@ export const STEP_LLM_DEFAULT_FIELDS: Array<{
     defaultMode: 'cloud',
   },
   {
-    stepKey: '6',
-    stepNumber: 6,
-    label: 'Étape 6 — Prompts vidéo',
+    stepKey: '7',
+    stepNumber: 7,
+    label: 'Étape 7 — Prompts vidéo',
     description: 'Génération/enrichissement des prompts finaux provider-aware.',
     defaultMode: 'local',
   },

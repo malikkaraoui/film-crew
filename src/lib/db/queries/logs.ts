@@ -24,3 +24,7 @@ export async function getProviderLogs(runId: string) {
     .where(eq(providerLog.runId, runId))
     .orderBy(desc(providerLog.createdAt))
 }
+
+export async function deleteProviderLogsForRun(runId: string) {
+  await db.delete(providerLog).where(eq(providerLog.runId, runId))
+}

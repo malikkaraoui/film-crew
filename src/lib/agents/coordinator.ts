@@ -3,12 +3,13 @@ import { AGENT_PROFILES, MEETING_ORDER } from './profiles'
 import { createAgentTrace } from '@/lib/db/queries/traces'
 import { updateRunCost } from '@/lib/db/queries/runs'
 import { executeWithFailover } from '@/lib/providers/failover'
-import type { LLMProvider } from '@/lib/providers/types'
+import type { LLMMessage, LLMProvider } from '@/lib/providers/types'
 import { logger } from '@/lib/logger'
 import type { AgentMessage, AgentRole, MeetingBrief, MeetingSceneOutlineItem } from '@/types/agent'
 import type { MeetingLlmMode, OutputConfig, ReferenceImageConfig } from '@/types/run'
 import type { StyleTemplate } from '@/lib/templates/loader'
 import { resolveLlmTarget } from '@/lib/llm/target'
+import { backfillSceneOutlineDialogue, extractBriefSceneDialogues } from '@/lib/meeting/scene-dialogue'
 
 const MEETING_TRANSCRIPT_MAX_CHARS = 2000
 const MEETING_LLM_TIMEOUT_MS = 180_000
@@ -139,6 +140,17 @@ function buildVisualSafetyDirective(): string {
   ].join('\n')
 }
 
+function buildMeetingSteeringDirective(meetingPromptNote: string | null | undefined): string {
+  const note = typeof meetingPromptNote === 'string' ? meetingPromptNote.trim() : ''
+  if (!note) return ''
+
+  return [
+    'Orientation opérateur pour cette réunion :',
+    note,
+    'Applique cette orientation comme une contrainte éditoriale forte pour cadrer les propositions, sans casser le format attendu du brief final.',
+  ].join('\n')
+}
+
 function validateSceneOutlineLock(sceneOutline: MeetingSceneOutlineItem[], outputConfig: OutputConfig | null | undefined): void {
   if (!outputConfig) return
 
@@ -179,6 +191,7 @@ export class MeetingCoordinator {
   private template: StyleTemplate | null
   private outputConfig: OutputConfig | null
   private referenceImages: ReferenceImageConfig | null
+  private meetingPromptNote: string | null
   private meetingLlmMode: MeetingLlmMode
   private meetingLlmModel: string | null
   private llmHost?: string
@@ -192,6 +205,7 @@ export class MeetingCoordinator {
     template?: StyleTemplate | null
     outputConfig?: OutputConfig | null
     referenceImages?: ReferenceImageConfig | null
+    meetingPromptNote?: string | null
     meetingLlmMode?: MeetingLlmMode
     meetingLlmModel?: string | null
     onMessage?: (message: AgentMessage) => void
@@ -202,6 +216,7 @@ export class MeetingCoordinator {
     this.template = opts.template ?? null
     this.outputConfig = opts.outputConfig ?? null
     this.referenceImages = opts.referenceImages ?? null
+    this.meetingPromptNote = opts.meetingPromptNote?.trim() || null
     this.meetingLlmMode = opts.meetingLlmMode ?? 'local'
     this.meetingLlmModel = opts.meetingLlmModel?.trim() || null
     this.onMessage = opts.onMessage
@@ -232,6 +247,7 @@ export class MeetingCoordinator {
       outputConfig: this.outputConfig,
       llmMode: this.meetingLlmMode,
       llmModel: this.meetingLlmModel,
+      meetingPromptNote: this.meetingPromptNote,
     })
 
     let totalCost = 0
@@ -244,9 +260,10 @@ export class MeetingCoordinator {
     const referenceImagesContext = this.referenceImages ? `\n\n${buildReferenceImagesContext(this.referenceImages)}` : ''
     const referenceImagesDirective = buildReferenceImagesDirective(this.referenceImages)
     const visualSafetyDirective = buildVisualSafetyDirective()
+    const meetingSteeringDirective = buildMeetingSteeringDirective(this.meetingPromptNote)
 
     // Phase 1 : Mia ouvre la réunion
-    const openingContext = `Nouvelle réunion de production. L'idée du client est : "${this.idea}".${this.brandKit ? `\n\nBrand Kit de la chaîne :\n${this.brandKit}` : ''}${templateContext}${outputLockContext}${referenceImagesContext}\n\n${visualSafetyDirective}\n\nPrésente le brief à l'équipe et lance la discussion. Sois directe et motivante.`
+    const openingContext = `Nouvelle réunion de production. L'idée du client est : "${this.idea}".${this.brandKit ? `\n\nBrand Kit de la chaîne :\n${this.brandKit}` : ''}${templateContext}${outputLockContext}${referenceImagesContext}${meetingSteeringDirective ? `\n\n${meetingSteeringDirective}` : ''}\n\n${visualSafetyDirective}\n\nPrésente le brief à l'équipe et lance la discussion. Sois directe et motivante.`
 
     const opening = await this.agentSpeak('mia', openingContext)
     totalCost += opening.metadata?.costEur ?? 0
@@ -261,7 +278,7 @@ export class MeetingCoordinator {
       const msg = await this.agentSpeak(role, context, {
         resetHistory: true,
         timeoutMs: MEETING_LLM_TIMEOUT_MS,
-        contextualPrelude: [referenceImagesDirective, visualSafetyDirective].filter(Boolean).join('\n\n') || undefined,
+        contextualPrelude: [referenceImagesDirective, visualSafetyDirective, meetingSteeringDirective].filter(Boolean).join('\n\n') || undefined,
       })
       totalCost += msg.metadata?.costEur ?? 0
     }
@@ -287,7 +304,7 @@ export class MeetingCoordinator {
         const msg = await this.agentSpeak(role, context, {
           resetHistory: true,
           timeoutMs: MEETING_LLM_TIMEOUT_MS,
-          contextualPrelude: [referenceImagesDirective, visualSafetyDirective].filter(Boolean).join('\n\n') || undefined,
+          contextualPrelude: [referenceImagesDirective, visualSafetyDirective, meetingSteeringDirective].filter(Boolean).join('\n\n') || undefined,
         })
         totalCost += msg.metadata?.costEur ?? 0
       }
@@ -322,7 +339,7 @@ export class MeetingCoordinator {
     const brandCheck = await this.agentSpeak('emilie', brandCheckContext, {
       resetHistory: true,
       timeoutMs: MEETING_LLM_TIMEOUT_MS,
-      contextualPrelude: [referenceImagesDirective, visualSafetyDirective].filter(Boolean).join('\n\n') || undefined,
+      contextualPrelude: [referenceImagesDirective, visualSafetyDirective, meetingSteeringDirective].filter(Boolean).join('\n\n') || undefined,
     })
     brandCheck.messageType = 'validation'
     totalCost += brandCheck.metadata?.costEur ?? 0
@@ -340,7 +357,7 @@ export class MeetingCoordinator {
         model: this.meetingLlmModel ?? undefined,
         host: this.llmHost,
         headers: this.llmHeaders,
-        contextualPrelude: [referenceImagesDirective, visualSafetyDirective].filter(Boolean).join('\n\n') || undefined,
+        contextualPrelude: [referenceImagesDirective, visualSafetyDirective, meetingSteeringDirective].filter(Boolean).join('\n\n') || undefined,
       })
       await this.recordMessage(section)
       totalCost += section.metadata?.costEur ?? 0
@@ -455,6 +472,7 @@ export class MeetingCoordinator {
     const outputLockContext = buildOutputLockContext(this.outputConfig)
     const referenceImagesContext = buildReferenceImagesContext(this.referenceImages)
     const visualSafetyDirective = buildVisualSafetyDirective()
+    const meetingSteeringDirective = buildMeetingSteeringDirective(this.meetingPromptNote)
     const compactSections = sections.map((section) => ({
       agent: section.agent,
       title: section.title,
@@ -465,60 +483,73 @@ export class MeetingCoordinator {
       'llm',
       async (provider) => {
         const llm = provider as LLMProvider
+        const messages: LLMMessage[] = [
+          {
+            role: 'system',
+            content: [
+              'Tu transformes une reunion de production en sceneOutline canonique.',
+              'Retourne uniquement un JSON valide, sans markdown ni texte autour.',
+              'Schema attendu :',
+              '{',
+              '  "sceneOutline": [',
+              '    {',
+              '      "index": 1,',
+              '      "title": "titre court",',
+              '      "description": "ce qui doit etre montre dans la scene",',
+              '      "dialogue": "dialogue ou narration si disponible",',
+              '      "camera": "intention camera principale",',
+              '      "lighting": "intention lumiere",',
+              '      "duration_s": 5,',
+              '      "foreground": "ce qu on voit au premier plan",',
+              '      "midground": "ce qu on voit au plan intermédiaire",',
+              '      "background": "ce qu on voit a l arrière-plan",',
+              '      "emotion": "emotion dominante",',
+              '      "narrativeRole": "role de la scene dans le recit"',
+              '    }',
+              '  ]',
+              '}',
+              'Règles :',
+              '- reprends le découpage scène par scène décidé par la réunion, sans fusion ni compression arbitraire',
+              '- si plusieurs scènes sont évoquées, conserve-les toutes dans l ordre',
+              '- si une scène est parlée dans les sections du brief, le champ dialogue ne doit jamais être vide',
+              '- chaque scène doit rester dessinable et exploitable ensuite par la prod',
+              '- chaque scène doit décrire explicitement premier plan, plan intermédiaire et arrière-plan',
+              '- aucun fond studio, fond vide ou fond neutre : remets toujours l action dans un décor réel',
+              '- la composition doit rester pensée pour un rendu vertical TikTok 9:16',
+              '- camera et lighting doivent rester courts et concrets',
+              ...(outputLockContext ? [outputLockContext] : []),
+              ...(referenceImagesContext ? [referenceImagesContext] : []),
+              ...(meetingSteeringDirective ? [meetingSteeringDirective] : []),
+              visualSafetyDirective,
+            ].join('\n'),
+          },
+          {
+            role: 'user',
+            content: [
+              `Idée : ${this.idea}`,
+              outputLockContext ? `\n${outputLockContext}` : '',
+              referenceImagesContext ? `\n${referenceImagesContext}` : '',
+              meetingSteeringDirective ? `\n${meetingSteeringDirective}` : '',
+              '',
+              'Résumé et sections du brief :',
+              JSON.stringify(compactSections, null, 2),
+              '',
+              'Transcript compacté de la réunion :',
+              compactTranscript,
+            ].join('\n'),
+          },
+        ]
+
+        logger.info({
+          event: 'meeting_scene_outline_prompt_prepared',
+          runId: this.runId,
+          messages,
+          llmMode: this.meetingLlmMode,
+          llmModel: this.meetingLlmModel,
+        })
+
         return llm.chat(
-          [
-            {
-              role: 'system',
-              content: [
-                'Tu transformes une reunion de production en sceneOutline canonique.',
-                'Retourne uniquement un JSON valide, sans markdown ni texte autour.',
-                'Schema attendu :',
-                '{',
-                '  "sceneOutline": [',
-                '    {',
-                '      "index": 1,',
-                '      "title": "titre court",',
-                '      "description": "ce qui doit etre montre dans la scene",',
-                '      "dialogue": "dialogue ou narration si disponible",',
-                '      "camera": "intention camera principale",',
-                '      "lighting": "intention lumiere",',
-                '      "duration_s": 5,',
-                '      "foreground": "ce qu on voit au premier plan",',
-                '      "midground": "ce qu on voit au plan intermédiaire",',
-                '      "background": "ce qu on voit a l arrière-plan",',
-                '      "emotion": "emotion dominante",',
-                '      "narrativeRole": "role de la scene dans le recit"',
-                '    }',
-                '  ]',
-                '}',
-                'Règles :',
-                '- reprends le découpage scène par scène décidé par la réunion, sans fusion ni compression arbitraire',
-                '- si plusieurs scènes sont évoquées, conserve-les toutes dans l ordre',
-                '- chaque scène doit rester dessinable et exploitable ensuite par la prod',
-                '- chaque scène doit décrire explicitement premier plan, plan intermédiaire et arrière-plan',
-                '- aucun fond studio, fond vide ou fond neutre : remets toujours l action dans un décor réel',
-                '- la composition doit rester pensée pour un rendu vertical TikTok 9:16',
-                '- camera et lighting doivent rester courts et concrets',
-                ...(outputLockContext ? [outputLockContext] : []),
-                ...(referenceImagesContext ? [referenceImagesContext] : []),
-                visualSafetyDirective,
-              ].join('\n'),
-            },
-            {
-              role: 'user',
-              content: [
-                `Idée : ${this.idea}`,
-                outputLockContext ? `\n${outputLockContext}` : '',
-                referenceImagesContext ? `\n${referenceImagesContext}` : '',
-                '',
-                'Résumé et sections du brief :',
-                JSON.stringify(compactSections, null, 2),
-                '',
-                'Transcript compacté de la réunion :',
-                compactTranscript,
-              ].join('\n'),
-            },
-          ],
+          messages,
           {
             model: this.meetingLlmModel ?? undefined,
             temperature: 0.2,
@@ -533,7 +564,8 @@ export class MeetingCoordinator {
     )
 
     const payload = extractJsonObject(result.content)
-    const sceneOutline = normalizeSceneOutline(payload.sceneOutline)
+  const dialogueByScene = extractBriefSceneDialogues({ sections, sceneOutline: [] })
+  const sceneOutline = backfillSceneOutlineDialogue(normalizeSceneOutline(payload.sceneOutline), dialogueByScene)
     validateSceneOutlineLock(sceneOutline, this.outputConfig)
 
     if (sceneOutline.length === 0) {

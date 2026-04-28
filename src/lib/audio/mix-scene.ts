@@ -52,7 +52,7 @@ export function buildSceneMixCommand(config: SceneMixConfig): FFmpegCommand {
   if (layerCount === 1) {
     return {
       bin: FFMPEG_BIN,
-      args: ['-i', ttsPath, '-y', outputPath],
+      args: ['-i', ttsPath, '-af', `apad=whole_dur=${targetDurationS}`, '-y', outputPath],
     }
   }
 
@@ -62,7 +62,7 @@ export function buildSceneMixCommand(config: SceneMixConfig): FFmpegCommand {
   let inputIndex = 1
 
   // Dialogue volume
-  filterParts.push(`[0:a]volume=${volumes.dialogue}[dial]`)
+  filterParts.push(`[0:a]apad=whole_dur=${targetDurationS},volume=${volumes.dialogue}[dial]`)
 
   const mixLabels: string[] = ['[dial]']
 
@@ -99,7 +99,7 @@ export function buildSceneMixCommand(config: SceneMixConfig): FFmpegCommand {
 
   // Merge all layers
   filterParts.push(
-    `${mixLabels.join('')}amix=inputs=${layerCount}:duration=first:dropout_transition=2[out]`,
+    `${mixLabels.join('')}amix=inputs=${layerCount}:duration=longest:dropout_transition=2[out]`,
   )
 
   const filterComplex = filterParts.join(';')

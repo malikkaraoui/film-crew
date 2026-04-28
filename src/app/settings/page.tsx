@@ -4,6 +4,13 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { useLlmCatalog } from '@/lib/client/use-llm-catalog'
+import {
+  buildModelOptions,
+  findModelDetail,
+  getModelDetailsForMode,
+  getModelPlaceholder,
+} from '@/lib/llm/catalog'
 import type { LlmMode, StepLlmConfigs } from '@/types/run'
 import {
   STEP_LLM_DEFAULT_FIELDS,
@@ -25,57 +32,16 @@ type ConfigRow = {
   value: string
 }
 
-type LlmCatalog = {
-  localModels: string[]
-  localError: string | null
-  cloudModels: string[]
-  cloudAvailable: boolean
-  openRouterModels: string[]
-  openRouterAvailable: boolean
-}
-
-function getModelsForMode(catalog: LlmCatalog, mode: LlmMode): string[] {
-  if (mode === 'cloud') return catalog.cloudModels
-  if (mode === 'openrouter') return catalog.openRouterModels
-  return catalog.localModels
-}
-
-function buildModelOptions(models: string[], selectedModel: string): string[] {
-  const normalizedSelectedModel = selectedModel.trim()
-  if (!normalizedSelectedModel) return models
-  if (models.includes(normalizedSelectedModel)) return models
-  return [normalizedSelectedModel, ...models]
-}
-
-function getModelPlaceholder(mode: LlmMode, stepKey: keyof StepLlmConfigs): string {
-  const fallback = getBuiltInStepLlmDefault(stepKey)
-  return mode === fallback.mode ? fallback.model : fallback.model
-}
-
 export default function SettingsPage() {
+  const { catalog, refreshCatalog, refreshingProvider } = useLlmCatalog()
   const [values, setValues] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
-  const [catalog, setCatalog] = useState<LlmCatalog>({
-    localModels: [],
-    localError: null,
-    cloudModels: [],
-    cloudAvailable: false,
-    openRouterModels: [],
-    openRouterAvailable: false,
-  })
 
   useEffect(() => {
     async function load() {
-      const [configRes, llmRes] = await Promise.all([
-        fetch('/api/config', { cache: 'no-store' }),
-        fetch('/api/llm/models', { cache: 'no-store' }),
-      ])
-
-      const [configJson, llmJson] = await Promise.all([
-        configRes.json(),
-        llmRes.json(),
-      ])
+      const configRes = await fetch('/api/config', { cache: 'no-store' })
+      const configJson = await configRes.json()
 
       const configRows = Array.isArray(configJson.data) ? configJson.data as ConfigRow[] : []
       const map: Record<string, string> = {}
@@ -97,10 +63,6 @@ export default function SettingsPage() {
       }
 
       setValues(map)
-
-      if (llmJson.data) {
-        setCatalog(llmJson.data as LlmCatalog)
-      }
     }
 
     void load().catch(() => {
@@ -184,14 +146,24 @@ export default function SettingsPage() {
               const keys = getStepLlmDefaultConfigKeys(definition.stepKey)
               const mode = (values[keys.modeKey] as LlmMode | undefined) ?? definition.defaultMode
               const selectedModel = values[keys.modelKey] ?? ''
-              const models = buildModelOptions(getModelsForMode(catalog, mode), selectedModel)
+              const models = buildModelOptions(getModelDetailsForMode(catalog, mode), selectedModel)
+              const selectedModelDetail = findModelDetail(catalog, mode, selectedModel)
 
               return (
                 <div key={definition.stepKey} className="rounded-lg border p-4 space-y-3">
-                  <div>
+                  <div className="flex items-start justify-between gap-3">
                     <div className="text-sm font-medium">{definition.label}</div>
-                    <div className="text-xs text-muted-foreground">{definition.description}</div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void refreshCatalog(mode, true)}
+                      disabled={refreshingProvider === mode}
+                    >
+                      {refreshingProvider === mode ? 'Rafraîchissement...' : 'Rafraîchir'}
+                    </Button>
                   </div>
+                  <div className="text-xs text-muted-foreground">{definition.description}</div>
 
                   <div className="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
                     <div>
@@ -199,7 +171,11 @@ export default function SettingsPage() {
                       <select
                         id={keys.modeKey}
                         value={mode}
-                        onChange={(e) => setValues((prev) => ({ ...prev, [keys.modeKey]: e.target.value }))}
+                        onChange={(e) => {
+                          const nextMode = e.target.value as LlmMode
+                          setValues((prev) => ({ ...prev, [keys.modeKey]: nextMode }))
+                          void refreshCatalog(nextMode)
+                        }}
                         className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                       >
                         <option value="local">Local</option>
@@ -218,7 +194,7 @@ export default function SettingsPage() {
                           className="mt-1 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm"
                         >
                           {models.map((model) => (
-                            <option key={model} value={model}>{model}</option>
+                            <option key={model.id} value={model.id}>{model.label}</option>
                           ))}
                         </select>
                       ) : (
@@ -226,8 +202,12 @@ export default function SettingsPage() {
                           id={keys.modelKey}
                           value={values[keys.modelKey] ?? ''}
                           onChange={(e) => setValues((prev) => ({ ...prev, [keys.modelKey]: e.target.value }))}
-                          placeholder={getModelPlaceholder(mode, definition.stepKey)}
+                          placeholder={getModelPlaceholder(mode)}
                         />
+                      )}
+
+                      {selectedModelDetail?.description && (
+                        <p className="mt-1 text-xs text-muted-foreground">{selectedModelDetail.description}</p>
                       )}
                     </div>
                   </div>

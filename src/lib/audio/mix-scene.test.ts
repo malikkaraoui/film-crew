@@ -58,6 +58,8 @@ describe('buildSceneMixCommand', () => {
     expect(cmd.args).toContain('/tmp/tts.wav')
     expect(cmd.args).toContain('-y')
     expect(cmd.args).toContain('/tmp/out.wav')
+    expect(cmd.args).toContain('-af')
+    expect(cmd.args.join(' ')).toContain('apad=whole_dur=30')
     expect(cmd.args).not.toContain('-filter_complex')
     expect(cmd.args.join(' ')).not.toContain('amix')
   })
@@ -79,6 +81,8 @@ describe('buildSceneMixCommand', () => {
 
     const filterComplex = args[fcIndex + 1]
     expect(filterComplex).toContain('amix=inputs=3')
+    expect(filterComplex).toContain('duration=longest')
+    expect(filterComplex).toContain('apad=whole_dur=30')
 
     // Ambiance and music should be looped
     const aloopOccurrences = (filterComplex.match(/aloop/g) || []).length
@@ -104,6 +108,7 @@ describe('buildSceneMixCommand', () => {
     const fcIndex = args.indexOf('-filter_complex')
     const filterComplex = args[fcIndex + 1]
     expect(filterComplex).toContain('amix=inputs=3')
+    expect(filterComplex).toContain('duration=longest')
     expect(filterComplex).not.toContain('aloop')
   })
 
@@ -123,6 +128,7 @@ describe('buildSceneMixCommand', () => {
     const fcIndex = args.indexOf('-filter_complex')
     const filterComplex = args[fcIndex + 1]
     expect(filterComplex).toContain('amix=inputs=4')
+    expect(filterComplex).toContain('duration=longest')
 
     // 2 aloop (ambiance + music), not fx
     const aloopOccurrences = (filterComplex.match(/aloop/g) || []).length

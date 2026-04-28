@@ -9,6 +9,7 @@ import { getStepLlmConfig, readProjectConfig } from '@/lib/runs/project-config'
 import { resolveLlmTarget } from '@/lib/llm/target'
 import type { OutputConfig } from '@/types/run'
 import type { DialogueScript } from '@/types/audio'
+import { backfillSceneOutlineDialogue, extractBriefSceneDialogues, findScenesMissingDialogue, normalizeDialogueScenesWithFallback } from '@/lib/meeting/scene-dialogue'
 
 export type DirectorPlan = {
   runId: string
@@ -161,8 +162,9 @@ async function buildDialogueScript(
   structuredJson: Record<string, unknown>,
   llmTarget: { model: string; host?: string; headers?: Record<string, string> },
 ): Promise<{ script: DialogueScript | null; costEur: number }> {
-  const scenes = Array.isArray(structuredJson.scenes) ? structuredJson.scenes : []
+  const scenes = Array.isArray(structuredJson.scenes) ? structuredJson.scenes.map(asRecord) : []
   if (scenes.length === 0) return { script: null, costEur: 0 }
+  const dialogueByScene = extractBriefSceneDialogues(brief)
 
   // Extraire les sections audio du brief (sami, jade, remi, theo)
   const audioSections = brief?.sections
@@ -172,7 +174,7 @@ async function buildDialogueScript(
 
   const targetDuration = typeof structuredJson.target_duration_s === 'number'
     ? structuredJson.target_duration_s
-    : scenes.reduce((sum: number, s: Record<string, unknown>) => sum + (typeof s.duration_s === 'number' ? s.duration_s : 5), 0)
+    : scenes.reduce((sum: number, s) => sum + (typeof s.duration_s === 'number' ? s.duration_s : 5), 0)
 
   const userContent = [
     `Idée : ${ctx.idea}`,
@@ -223,6 +225,21 @@ async function buildDialogueScript(
       throw new Error('dialogue_script.scenes vide ou absent')
     }
 
+    parsed.scenes = normalizeDialogueScenesWithFallback({
+      scenes: parsed.scenes,
+      structuredScenes: scenes,
+      dialogueByScene,
+    })
+
+    const missingDialogueScenes = findScenesMissingDialogue({
+      scenes: parsed.scenes,
+      structuredScenes: scenes,
+      dialogueByScene,
+    })
+    if (missingDialogueScenes.length > 0) {
+      throw new Error(`dialogue_script incomplet: scène(s) sans lignes ${missingDialogueScenes.join(', ')}`)
+    }
+
     // Forcer runId et language
     parsed.runId = ctx.runId
     parsed.language = parsed.language || 'fr'
@@ -262,7 +279,8 @@ export const step3Json: PipelineStep = {
       logger.warn({ event: 'brief_missing', runId: ctx.runId, fallback: 'ctx.idea' })
     }
 
-    const sceneOutline = brief?.sceneOutline ?? []
+    const sceneDialogueHints = extractBriefSceneDialogues(brief)
+    const sceneOutline = backfillSceneOutlineDialogue(brief?.sceneOutline ?? [], sceneDialogueHints)
 
     // Construire le prompt utilisateur à partir du brief ou fallback sur l'idée brute
     const userContent = briefContent

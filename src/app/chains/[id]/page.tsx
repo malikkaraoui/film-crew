@@ -44,6 +44,8 @@ export default function ChainDetailPage() {
   const [addingPlatform, setAddingPlatform] = useState('tiktok')
   const [addingAccount, setAddingAccount] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [actionError, setActionError] = useState('')
 
   useEffect(() => {
     void loadChain()
@@ -77,6 +79,7 @@ export default function ChainDetailPage() {
   }
 
   async function handleAddAccount() {
+    setActionError('')
     setAddingAccount(true)
     const res = await fetch(`/api/chains/${id}/publication-accounts`, {
       method: 'POST',
@@ -89,11 +92,13 @@ export default function ChainDetailPage() {
   }
 
   async function handleDeleteAccount(accountId: string) {
+    setActionError('')
     await fetch(`/api/chains/${id}/publication-accounts/${accountId}`, { method: 'DELETE' })
     setPublicationAccounts((prev) => prev.filter((a) => a.id !== accountId))
   }
 
   async function handleSave() {
+    setActionError('')
     setSaving(true)
     await fetch(`/api/chains/${id}`, {
       method: 'PUT',
@@ -105,6 +110,7 @@ export default function ChainDetailPage() {
   }
 
   async function handleDuplicate() {
+    setActionError('')
     const res = await fetch(`/api/chains/${id}/duplicate`, { method: 'POST' })
     const json = await res.json()
     if (json.data) {
@@ -114,8 +120,25 @@ export default function ChainDetailPage() {
 
   async function handleDelete() {
     if (!confirm('Supprimer cette chaîne et tous ses fichiers ?')) return
-    await fetch(`/api/chains/${id}`, { method: 'DELETE' })
-    router.push('/chains')
+    setDeleting(true)
+    setActionError('')
+
+    try {
+      const res = await fetch(`/api/chains/${id}`, { method: 'DELETE' })
+      const json = await res.json()
+
+      if (!res.ok) {
+        setActionError(json.error?.message ?? 'Suppression impossible')
+        return
+      }
+
+      router.push('/chains')
+      router.refresh()
+    } catch (error) {
+      setActionError((error as Error).message)
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const currentProject = useMemo(() => getCurrentProject(runs), [runs])
@@ -239,10 +262,16 @@ export default function ChainDetailPage() {
               <Button variant="outline" onClick={handleDuplicate}>
                 Dupliquer
               </Button>
-              <Button variant="destructive" onClick={handleDelete}>
-                Supprimer la chaîne
+              <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+                {deleting ? 'Suppression...' : 'Supprimer la chaîne'}
               </Button>
             </div>
+
+            {actionError && (
+              <div className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {actionError}
+              </div>
+            )}
 
             <div className="space-y-3">
               <div>

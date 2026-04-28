@@ -5,43 +5,23 @@ import { useParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { AgentChat } from '@/components/studio/agent-chat'
 import { FULL_SPEAKING_SEQUENCE, getMeetingState } from '@/lib/agents/meeting-sequence'
+import { useLlmCatalog } from '@/lib/client/use-llm-catalog'
 import type { MeetingState } from '@/lib/agents/meeting-sequence'
+import {
+  buildModelOptions,
+  findModelDetail,
+  getModelDetailsForMode,
+  getModelsForMode,
+  getModelPlaceholder,
+} from '@/lib/llm/catalog'
 import type { LlmMode, ProjectConfig, Run, RunStep } from '@/types/run'
 
 type RunWithSteps = Run & { steps: RunStep[]; projectConfig?: ProjectConfig | null }
-
-type LlmCatalog = {
-  localModels: string[]
-  localError: string | null
-  cloudModels: string[]
-  cloudAvailable: boolean
-  openRouterModels: string[]
-  openRouterAvailable: boolean
-}
-
-function getModelsForMode(catalog: LlmCatalog, mode: LlmMode): string[] {
-  if (mode === 'cloud') return catalog.cloudModels
-  if (mode === 'openrouter') return catalog.openRouterModels
-  return catalog.localModels
-}
-
-function buildModelOptions(models: string[], selectedModel: string): string[] {
-  const normalizedSelectedModel = selectedModel.trim()
-  if (!normalizedSelectedModel) return models
-  if (models.includes(normalizedSelectedModel)) return models
-  return [normalizedSelectedModel, ...models]
-}
 
 function getModeLabel(mode: LlmMode): string {
   if (mode === 'cloud') return 'Cloud'
   if (mode === 'openrouter') return 'OpenRouter'
   return 'Local'
-}
-
-function getModelPlaceholder(mode: LlmMode): string {
-  if (mode === 'cloud') return 'deepseek-v3.1:671b-cloud'
-  if (mode === 'openrouter') return 'nvidia/nemotron-3-nano-30b-a3b:free'
-  return 'qwen2.5:7b'
 }
 
 type TraceEntry = {
@@ -78,18 +58,15 @@ export default function StudioPage() {
   const [meetingState, setMeetingState] = useState<MeetingState | null>(null)
   const [meetingStartedAtMs, setMeetingStartedAtMs] = useState<number | null>(null)
   const [nowMs, setNowMs] = useState(Date.now())
-  const [catalog, setCatalog] = useState<LlmCatalog>({
-    localModels: [],
-    localError: null,
-    cloudModels: [],
-    cloudAvailable: false,
-    openRouterModels: [],
-    openRouterAvailable: false,
-  })
   const [selectedMeetingMode, setSelectedMeetingMode] = useState<LlmMode>('local')
   const [selectedMeetingModel, setSelectedMeetingModel] = useState('')
+  const [meetingPromptNote, setMeetingPromptNote] = useState('')
   const [nextStepMode, setNextStepMode] = useState<LlmMode>('local')
   const [nextStepModel, setNextStepModel] = useState('')
+  const activeCatalogMode = selectedMeetingMode === 'local' || nextStepMode !== 'local'
+    ? selectedMeetingMode
+    : nextStepMode
+  const { catalog, refreshCatalog, refreshingProvider } = useLlmCatalog(activeCatalogMode)
   const [actionBusy, setActionBusy] = useState<'advance' | 'export' | 'relaunch' | null>(null)
   const [actionNotice, setActionNotice] = useState('')
   const hasMeeting = traces.length > 0
@@ -129,7 +106,6 @@ export default function StudioPage() {
   useEffect(() => {
     void loadRun()
     void loadTraces()
-    void loadLlmCatalog()
     const interval = setInterval(() => {
       void loadRun()
       void loadTraces()
@@ -159,6 +135,10 @@ export default function StudioPage() {
     setSelectedMeetingMode(mode)
     setSelectedMeetingModel(step2Config?.model ?? fallbackModel ?? '')
   }, [catalog.cloudModels, catalog.localModels, catalog.openRouterModels, detectedCurrentModel, step2Config?.mode, step2Config?.model])
+
+  useEffect(() => {
+    setMeetingPromptNote(run?.projectConfig?.meetingPromptNote ?? '')
+  }, [run?.projectConfig?.meetingPromptNote])
 
   useEffect(() => {
     const models = getModelsForMode(catalog, selectedMeetingMode)
@@ -208,18 +188,6 @@ export default function StudioPage() {
     setLoading(false)
   }
 
-  async function loadLlmCatalog() {
-    try {
-      const res = await fetch('/api/llm/models', { cache: 'no-store' })
-      const json = await res.json()
-      if (json.data) {
-        setCatalog(json.data)
-      }
-    } catch {
-      setCatalog({ localModels: [], localError: 'Catalogue LLM indisponible', cloudModels: [], cloudAvailable: false, openRouterModels: [], openRouterAvailable: false })
-    }
-  }
-
   async function startMeeting(force = false) {
     const chosenModel = selectedMeetingModel.trim()
 
@@ -254,6 +222,7 @@ export default function StudioPage() {
           force,
           meetingLlmMode: selectedMeetingMode,
           meetingLlmModel: chosenModel,
+          meetingPromptNote,
         }),
       })
       const json = await res.json()
@@ -387,6 +356,8 @@ export default function StudioPage() {
       : 'Retour au cockpit'
   const cloudModelsLabel = catalog.cloudModels.join(' · ')
   const openRouterModelsLabel = catalog.openRouterModels.join(' · ')
+  const selectedMeetingDetail = findModelDetail(catalog, selectedMeetingMode, selectedMeetingModel)
+  const selectedNextStepDetail = findModelDetail(catalog, nextStepMode, nextStepModel)
 
   function renderModelPicker(options: {
     mode: LlmMode
@@ -394,8 +365,9 @@ export default function StudioPage() {
     onModeChange: (mode: LlmMode) => void
     onModelChange: (model: string) => void
     prefix: string
+    disabled?: boolean
   }) {
-    const models = buildModelOptions(getModelsForMode(catalog, options.mode), options.model)
+    const models = buildModelOptions(getModelDetailsForMode(catalog, options.mode), options.model)
     const placeholder = getModelPlaceholder(options.mode)
 
     return (
@@ -405,8 +377,13 @@ export default function StudioPage() {
           <select
             id={`${options.prefix}-mode`}
             value={options.mode}
-            onChange={(e) => options.onModeChange(e.target.value as LlmMode)}
+            onChange={(e) => {
+              const nextMode = e.target.value as LlmMode
+              options.onModeChange(nextMode)
+              void refreshCatalog(nextMode)
+            }}
             className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
+            disabled={options.disabled}
           >
             <option value="local">Local</option>
             <option value="cloud">Cloud</option>
@@ -422,9 +399,10 @@ export default function StudioPage() {
               value={options.model}
               onChange={(e) => options.onModelChange(e.target.value)}
               className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
+              disabled={options.disabled}
             >
               {models.map((model) => (
-                <option key={model} value={model}>{model}</option>
+                <option key={model.id} value={model.id}>{model.label}</option>
               ))}
             </select>
           ) : (
@@ -434,6 +412,7 @@ export default function StudioPage() {
               onChange={(e) => options.onModelChange(e.target.value)}
               placeholder={placeholder}
               className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
+              disabled={options.disabled}
             />
           )}
         </div>
@@ -456,7 +435,18 @@ export default function StudioPage() {
       {isIdle && (
         <div className="rounded-lg border p-4 space-y-3">
           <div>
-            <div className="text-sm font-medium">LLM de la réunion</div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-medium">LLM de la réunion</div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void refreshCatalog(selectedMeetingMode, true)}
+                disabled={refreshingProvider === selectedMeetingMode}
+              >
+                {refreshingProvider === selectedMeetingMode ? 'Rafraîchissement...' : 'Rafraîchir'}
+              </Button>
+            </div>
             <div className="text-xs text-muted-foreground">
                 Cloud dispo : {cloudModelsLabel || 'aucun catalogue cloud reçu'}{openRouterModelsLabel ? ` · OpenRouter : ${openRouterModelsLabel}` : ''}
             </div>
@@ -470,11 +460,34 @@ export default function StudioPage() {
             prefix: 'meeting',
           })}
 
+          {selectedMeetingDetail?.description && (
+            <div className="text-xs text-muted-foreground">{selectedMeetingDetail.description}</div>
+          )}
+
           {catalog.localError && selectedMeetingMode === 'local' && (
             <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               {catalog.localError}
             </div>
           )}
+
+          {catalog.openRouterError && selectedMeetingMode === 'openrouter' && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              {catalog.openRouterError}
+            </div>
+          )}
+
+          <div>
+            <label htmlFor="meeting-prompt-note" className="text-xs font-medium text-muted-foreground">
+              Orientation de réunion (optionnel)
+            </label>
+            <textarea
+              id="meeting-prompt-note"
+              value={meetingPromptNote}
+              onChange={(e) => setMeetingPromptNote(e.target.value)}
+              placeholder="Ex: insiste sur le suspense psychologique, réduis les effets démonstratifs, privilégie une voix off sobre et des scènes plus lisibles."
+              className="mt-1 min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
+            />
+          </div>
         </div>
       )}
 
@@ -571,6 +584,10 @@ export default function StudioPage() {
               onModelChange: setNextStepModel,
               prefix: 'step3',
             })}
+
+            {selectedNextStepDetail?.description && (
+              <div className="text-xs text-muted-foreground">{selectedNextStepDetail.description}</div>
+            )}
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -599,6 +616,19 @@ export default function StudioPage() {
                 onModelChange: setSelectedMeetingModel,
                 prefix: 'meeting-relaunch',
               })}
+
+              <div>
+                <label htmlFor="meeting-relaunch-note" className="text-xs font-medium text-muted-foreground">
+                  Orientation de relance
+                </label>
+                <textarea
+                  id="meeting-relaunch-note"
+                  value={meetingPromptNote}
+                  onChange={(e) => setMeetingPromptNote(e.target.value)}
+                  placeholder="Ex: resserre le hook, clarifie les dialogues, verrouille un décor plus réaliste et moins studio."
+                  className="mt-1 min-h-24 w-full rounded-md border bg-background px-3 py-2 text-sm"
+                />
+              </div>
 
               <Button variant="outline" onClick={handleRelaunchWithOtherModel} disabled={actionBusy === 'relaunch' || !selectedMeetingModel}>
                 {actionBusy === 'relaunch' ? 'Relance...' : 'Relancer la réunion avec ce modèle'}

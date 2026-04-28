@@ -9,10 +9,17 @@ import {
   normalizeLlmMode,
 } from '@/lib/llm/target'
 
-const LLM_STEP_KEYS = ['2', '3', '4', '6'] as const
+const LLM_STEP_KEYS = ['2', '3', '4', '7'] as const
 type LlmStepKey = typeof LLM_STEP_KEYS[number]
 const DEFAULT_SCENE_DURATION_S = 10
 const DEFAULT_GENERATION_MODE: GenerationMode = 'manual'
+
+function normalizeMeetingPromptNote(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  return trimmed.slice(0, 2000)
+}
 
 function normalizeGenerationMode(value: unknown): GenerationMode {
   return value === 'automatic' ? 'automatic' : DEFAULT_GENERATION_MODE
@@ -144,6 +151,7 @@ export function buildProjectConfig(input?: Partial<ProjectConfig> | null): Proje
   return {
     meetingLlmMode: step2.mode,
     meetingLlmModel: step2.model,
+    meetingPromptNote: normalizeMeetingPromptNote(input?.meetingPromptNote),
     stepLlmConfigs,
     outputConfig: normalizeOutputConfig(input?.outputConfig),
     referenceImages: normalizeReferenceImages(input?.referenceImages),

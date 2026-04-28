@@ -33,7 +33,7 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 /**
  * Source audio canonique = audio/audio-master-manifest.json produit par step-4c-audio.
- * Aucun fallback TTS — si l'audio est absent, on continue sans audio.
+ * Aucun fallback TTS — en mode automatique, l'absence audio bloque la génération.
  */
 async function resolveMasterAudioPath(storagePath: string, runId: string): Promise<string | null> {
   try {
@@ -93,7 +93,7 @@ export const step6Generation: PipelineStep = {
       logger.warn({
         event: 'generation_manual_mode_skip',
         runId: ctx.runId,
-        message: 'Étape 6 sautée en mode manuel pour éviter tout appel provider automatique',
+        message: 'Étape 8 sautée en mode manuel pour éviter tout appel provider automatique',
       })
 
       return {
@@ -106,6 +106,21 @@ export const step6Generation: PipelineStep = {
           generationMode: 'manual',
           autoGenerationSkipped: true,
         },
+      }
+    }
+
+    if (!audioPath) {
+      logger.error({
+        event: 'generation_audio_gate_blocked',
+        runId: ctx.runId,
+        message: 'audio-master-manifest.json absent ou invalide — gate audio bloquant',
+      })
+
+      return {
+        success: false,
+        costEur: 0,
+        outputData: null,
+        error: 'audio-master-manifest.json absent ou invalide — gate audio bloquant',
       }
     }
 

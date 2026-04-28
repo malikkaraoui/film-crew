@@ -174,7 +174,7 @@ export const step4cAudio: PipelineStep = {
 
       sceneMixInputs.push({
         sceneIndex: scene.sceneIndex,
-        durationS: sceneTTS.totalDurationS,
+        durationS: Math.max(sceneTTS.totalDurationS, pkg.timing.targetDurationS),
         ttsFilePath: sceneTTS.concatFilePath,
         mixFilePath: mixPath,
         ttsProvider: sceneTTS.provider,

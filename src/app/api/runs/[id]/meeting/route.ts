@@ -110,6 +110,7 @@ export async function POST(
       force?: boolean
       meetingLlmMode?: 'local' | 'cloud' | 'openrouter'
       meetingLlmModel?: string
+      meetingPromptNote?: string
     }
 
     if (run.status === 'running' && run.currentStep === 2) {
@@ -177,10 +178,14 @@ export async function POST(
       ? body.meetingLlmModel.trim()
       : currentProjectConfig?.meetingLlmModel
     const meetingLlmModel = normalizeLlmModelForMode(meetingLlmMode, requestedMeetingLlmModel)
+    const meetingPromptNote = typeof body.meetingPromptNote === 'string'
+      ? body.meetingPromptNote.trim()
+      : currentProjectConfig?.meetingPromptNote
 
     await writeProjectConfig(storagePath, {
       meetingLlmMode,
       meetingLlmModel,
+      meetingPromptNote,
     })
 
     if (body.force === true && existingTraces.length > 0) {
@@ -203,6 +208,7 @@ export async function POST(
       runId: id,
       idea: run.idea,
       brandKit,
+      meetingPromptNote,
       meetingLlmMode,
       meetingLlmModel,
     })
