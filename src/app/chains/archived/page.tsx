@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import type { Chain } from '@/types/chain'
 
 function formatDate(value: Date | string | null): string {
@@ -17,6 +18,9 @@ export default function ArchivedChainsPage() {
   const [chains, setChains] = useState<Chain[]>([])
   const [loading, setLoading] = useState(true)
   const [restoring, setRestoring] = useState<string | null>(null)
+  const [purging, setPurging] = useState<string | null>(null)
+  const [confirmInputs, setConfirmInputs] = useState<Record<string, string>>({})
+  const [confirmOpen, setConfirmOpen] = useState<string | null>(null)
   const [error, setError] = useState('')
 
   async function loadChains() {
@@ -30,9 +34,7 @@ export default function ArchivedChainsPage() {
     }
   }
 
-  useEffect(() => {
-    void loadChains()
-  }, [])
+  useEffect(() => { void loadChains() }, [])
 
   async function handleRestore(id: string) {
     setRestoring(id)
@@ -40,15 +42,38 @@ export default function ArchivedChainsPage() {
     try {
       const res = await fetch(`/api/chains/${id}/restore`, { method: 'POST' })
       const json = await res.json()
-      if (!res.ok) {
-        setError(json.error?.message ?? 'Restauration impossible')
-        return
-      }
+      if (!res.ok) { setError(json.error?.message ?? 'Restauration impossible'); return }
       await loadChains()
     } catch (e) {
       setError((e as Error).message)
     } finally {
       setRestoring(null)
+    }
+  }
+
+  async function handlePurge(id: string, name: string) {
+    const confirm = confirmInputs[id] ?? ''
+    if (confirm.trim() !== name.trim()) {
+      setError(`Confirmation invalide — saisir exactement : ${name}`)
+      return
+    }
+    setPurging(id)
+    setError('')
+    try {
+      const res = await fetch(`/api/chains/${id}/hard`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm }),
+      })
+      const json = await res.json()
+      if (!res.ok) { setError(json.error?.message ?? 'Suppression impossible'); return }
+      setConfirmOpen(null)
+      setConfirmInputs((prev) => { const next = { ...prev }; delete next[id]; return next })
+      await loadChains()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setPurging(null)
     }
   }
 
@@ -58,7 +83,7 @@ export default function ArchivedChainsPage() {
         <div>
           <h1 className="text-xl font-semibold">Chaînes archivées</h1>
           <p className="text-sm text-muted-foreground">
-            Ces chaînes ne sont plus visibles dans la liste principale. Tu peux les restaurer à tout moment.
+            Ces chaînes ne sont plus visibles dans la liste principale. Tu peux les restaurer ou les supprimer définitivement.
           </p>
         </div>
         <Link href="/chains">
@@ -88,17 +113,50 @@ export default function ArchivedChainsPage() {
                     <span>Archivée le {formatDate(c.archivedAt)}</span>
                   </CardDescription>
                 </div>
-                <Button
-                  variant="outline"
-                  onClick={() => handleRestore(c.id)}
-                  disabled={restoring === c.id}
-                >
-                  {restoring === c.id ? 'Restauration...' : 'Restaurer'}
-                </Button>
+                <div className="flex shrink-0 gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => handleRestore(c.id)}
+                    disabled={restoring === c.id || purging === c.id}
+                  >
+                    {restoring === c.id ? 'Restauration...' : 'Restaurer'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setConfirmOpen(confirmOpen === c.id ? null : c.id)}
+                    disabled={restoring === c.id || purging === c.id}
+                  >
+                    Supprimer définitivement
+                  </Button>
+                </div>
               </CardHeader>
-              <CardContent className="text-xs text-muted-foreground">
-                Les runs et le storage sont conservés. Restaurer la rendra à nouveau visible et utilisable.
-              </CardContent>
+
+              {confirmOpen === c.id && (
+                <CardContent className="space-y-2 border-t pt-3">
+                  <p className="text-xs text-destructive">
+                    Cette action est irréversible. Tous les runs, fichiers audio et logs seront supprimés.
+                    Saisir le nom exact pour confirmer :
+                    <span className="ml-1 font-mono font-semibold">{c.name}</span>
+                  </p>
+                  <div className="flex gap-2">
+                    <Input
+                      className="h-7 text-xs"
+                      placeholder={c.name}
+                      value={confirmInputs[c.id] ?? ''}
+                      onChange={(e) =>
+                        setConfirmInputs((prev) => ({ ...prev, [c.id]: e.target.value }))
+                      }
+                    />
+                    <Button
+                      variant="destructive"
+                      onClick={() => handlePurge(c.id, c.name)}
+                      disabled={purging === c.id || (confirmInputs[c.id] ?? '').trim() !== c.name.trim()}
+                    >
+                      {purging === c.id ? 'Suppression...' : 'Confirmer'}
+                    </Button>
+                  </div>
+                </CardContent>
+              )}
             </Card>
           ))}
         </div>
