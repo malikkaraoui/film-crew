@@ -48,7 +48,12 @@ export default function ChainsPage() {
             Ici tu vois seulement tes chaînes. Tu entres dans une chaîne pour gérer ses projets.
           </p>
         </div>
-        <Button onClick={() => setOpen(true)}>Nouvelle chaîne</Button>
+        <div className="flex items-center gap-2">
+          <Link href="/chains/archived">
+            <Button variant="outline">Voir les archives</Button>
+          </Link>
+          <Button onClick={() => setOpen(true)}>Nouvelle chaîne</Button>
+        </div>
       </div>
 
       {chains.length === 0 ? (

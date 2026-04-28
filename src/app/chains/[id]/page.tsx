@@ -44,7 +44,7 @@ export default function ChainDetailPage() {
   const [addingPlatform, setAddingPlatform] = useState('tiktok')
   const [addingAccount, setAddingAccount] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [deleting, setDeleting] = useState(false)
+  const [archiving, setArchiving] = useState(false)
   const [actionError, setActionError] = useState('')
 
   useEffect(() => {
@@ -118,9 +118,9 @@ export default function ChainDetailPage() {
     }
   }
 
-  async function handleDelete() {
-    if (!confirm('Supprimer cette chaîne et tous ses fichiers ?')) return
-    setDeleting(true)
+  async function handleArchive() {
+    if (!confirm('Archiver cette chaîne ? Tu pourras la restaurer depuis la vue Archivées.')) return
+    setArchiving(true)
     setActionError('')
 
     try {
@@ -128,7 +128,7 @@ export default function ChainDetailPage() {
       const json = await res.json()
 
       if (!res.ok) {
-        setActionError(json.error?.message ?? 'Suppression impossible')
+        setActionError(json.error?.message ?? 'Archivage impossible')
         return
       }
 
@@ -137,7 +137,7 @@ export default function ChainDetailPage() {
     } catch (error) {
       setActionError((error as Error).message)
     } finally {
-      setDeleting(false)
+      setArchiving(false)
     }
   }
 
@@ -262,8 +262,8 @@ export default function ChainDetailPage() {
               <Button variant="outline" onClick={handleDuplicate}>
                 Dupliquer
               </Button>
-              <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
-                {deleting ? 'Suppression...' : 'Supprimer la chaîne'}
+              <Button variant="outline" onClick={handleArchive} disabled={archiving}>
+                {archiving ? 'Archivage...' : 'Archiver la chaîne'}
               </Button>
             </div>
 
